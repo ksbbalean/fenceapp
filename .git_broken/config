@@ -1,0 +1,17 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[remote "upstream"]
+	url = https://github.com/frappe/webshop.git
+	fetch = +refs/heads/develop:refs/remotes/upstream/develop
+[branch "main"]
+	remote = upstream
+	merge = refs/heads/develop
+[remote "origin"]
+	url = https://github.com/ksbbalean/webshop
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[remote "secondary"]
+	url = https://github.com/ksbbalean/fenceshop
+	fetch = +refs/heads/*:refs/remotes/secondary/*

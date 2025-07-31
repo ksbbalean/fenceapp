@@ -1,0 +1,3 @@
+0000000000000000000000000000000000000000 bf61e97ca2fdbf2fe7bb25f3d6a5731040319da9 ksbbalean <ksbbalean@gmail.com> 1753036115 +0000	clone: from https://github.com/frappe/webshop.git
+bf61e97ca2fdbf2fe7bb25f3d6a5731040319da9 bf61e97ca2fdbf2fe7bb25f3d6a5731040319da9 ksbbalean <ksbbalean@gmail.com> 1753969249 +0000	Branch: renamed refs/heads/develop to refs/heads/main
+bf61e97ca2fdbf2fe7bb25f3d6a5731040319da9 15e52d121a8156f8634fdda6e243048b8a3da3b1 ksbbalean <ksbbalean@gmail.com> 1753969972 +0000	commit: Clean fresh commit after fixing local Git object issue

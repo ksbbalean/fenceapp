@@ -1,0 +1,259 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('H&J Fence Supply POS') }}{% endblock %}
+
+{% block head_include %}
+<link rel="stylesheet" type="text/css" href="/pos/pos.css">
+<style>
+    /* Inline critical styles for immediate loading */
+    .pos-container {
+        display: grid;
+        grid-template-columns: 250px 2fr 0.8fr;
+        min-height: 100vh;
+        gap: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .fence-sidebar {
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        padding: 20px 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .left-panel {
+        background: white;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #dee2e6;
+    }
+    
+    .right-panel {
+        background: white;
+        display: flex;
+        flex-direction: column;
+    }
+</style>
+{% endblock %}
+
+{% block script %}
+<script type="text/javascript" src="/pos/index.js"></script>
+{% endblock %}
+
+{% block page_content %}
+<div class="pos-container">
+    <!-- Material Type Sidebar -->
+    <div class="fence-sidebar">
+        <div class="sidebar-title">{{ _("Material Type") }}</div>
+        
+        {% for material in material_types %}
+        <div class="fence-type-btn" data-category="{{ material.name }}" onclick="selectCategory('{{ material.name|e }}')">
+            <div class="fence-type-image">
+                {% if material.image %}
+                    <img src="{{ material.image }}" alt="{{ material.material_type_name }}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.innerHTML='🏗️';">
+                {% else %}
+                    🏗️
+                {% endif %}
+            </div>
+            <div class="fence-type-name">{{ _(material.material_type_name) }}</div>
+        </div>
+        {% endfor %}
+        
+        <!-- Default material types if none exist -->
+        {% if not material_types %}
+        <div class="fence-type-btn active" data-category="vinyl" onclick="selectCategory('vinyl')">
+            <div class="fence-type-image">🏠</div>
+            <div class="fence-type-name">{{ _("Vinyl") }}</div>
+        </div>
+        <div class="fence-type-btn" data-category="aluminum" onclick="selectCategory('aluminum')">
+            <div class="fence-type-image">🏗️</div>
+            <div class="fence-type-name">{{ _("Aluminum") }}</div>
+        </div>
+        <div class="fence-type-btn" data-category="wood" onclick="selectCategory('wood')">
+            <div class="fence-type-image">🌲</div>
+            <div class="fence-type-name">{{ _("Wood") }}</div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Main Content Panel -->
+    <div class="left-panel">
+        <!-- Header -->
+        <div class="pos-header">
+            <div class="pos-title">{{ _("H&J Fence Supply POS") }}</div>
+            <div class="header-controls">
+                <div class="language-toggle">
+                    <button class="language-btn active" onclick="window.fencePOS.switchLanguage('en')">EN</button>
+                    <button class="language-btn" onclick="window.fencePOS.switchLanguage('es')">ES</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Customer Section -->
+        <div class="customer-section">
+            <div class="customer-info">
+                <div class="customer-name" id="customerName">{{ _("Walk-in Customer") }}</div>
+                <div class="customer-type" id="customerType">{{ _("Individual") }}</div>
+            </div>
+            <div>
+                <div class="price-list-name" id="priceListName">{{ _("Standard Selling") }}</div>
+                <button class="customer-lookup-btn" onclick="openCustomerSearch()">{{ _("Lookup Customer") }}</button>
+            </div>
+        </div>
+        
+        <!-- Search Bar -->
+        <div class="search-bar">
+            <input type="text" class="search-input" placeholder="{{ _('Search fence components...') }}" id="searchInput">
+        </div>
+        
+        <!-- Products Section -->
+        <div class="items-section">
+            <!-- Material Type Selection -->
+            <div id="categoryView">
+                <div class="section-title">{{ _("Select Material Type") }}</div>
+                <div class="category-grid" id="categoryGrid">
+                    <!-- Material types will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Style Selection -->
+            <div id="styleView" style="display: none;">
+                <div class="section-title" id="styleTitle">{{ _("Select Style") }}</div>
+                <div class="style-grid" id="styleGrid">
+                    <!-- Styles will be populated dynamically -->
+                </div>
+            </div>
+            
+            <!-- Height and Color Selection -->
+            <div id="optionsView" style="display: none;">
+                <div class="section-title" id="optionsTitle">{{ _("Select Height & Color") }}</div>
+                <div style="margin-bottom: 25px;">
+                    <div class="component-header">{{ _("Height Options") }}</div>
+                    <div class="option-grid" id="heightGrid">
+                        <!-- Heights will be populated dynamically -->
+                    </div>
+                </div>
+                <div style="margin-bottom: 25px;">
+                    <div class="component-header">{{ _("Color Options") }}</div>
+                    <div class="option-grid" id="colorGrid">
+                        <!-- Colors will be populated dynamically -->
+                    </div>
+                </div>
+                <button class="checkout-btn" onclick="window.fencePOS.proceedToComponents()" style="width: 200px; margin: 20px auto; display: block;">
+                    {{ _("Continue to Components") }}
+                </button>
+            </div>
+            
+            <!-- Component Selection -->
+            <div id="componentView" style="display: none;">
+                <div class="section-title" id="componentTitle">{{ _("Select Components") }}</div>
+                <div id="componentsContainer">
+                    <!-- Components will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cart Panel -->
+    <div class="right-panel">
+        <div class="cart-header">
+            <div class="cart-title">{{ _("Item Cart") }}</div>
+        </div>
+        
+        <div class="cart-items" id="cartItems">
+            <div class="empty-cart">{{ _("No items in cart") }}</div>
+        </div>
+        
+        <div class="cart-total">
+            <div class="total-row">
+                <span>{{ _("Total Quantity:") }}</span>
+                <span id="totalQty">0</span>
+            </div>
+            <div class="total-row">
+                <span>{{ _("Net Total:") }}</span>
+                <span id="netTotal">$0.00</span>
+            </div>
+            <div class="total-row grand-total">
+                <span>{{ _("Grand Total:") }}</span>
+                <span id="grandTotal">$0.00</span>
+            </div>
+        </div>
+        
+        <!-- Order Options Section -->
+        <div class="order-options">
+            <!-- Order Type Selection -->
+            <div class="option-group">
+                <div class="option-label">{{ _("Order Type") }}</div>
+                <div class="option-buttons">
+                    <button class="option-btn selected" onclick="selectOrderType('quote')">{{ _("Quote Only") }}</button>
+                    <button class="option-btn" onclick="selectOrderType('order')">{{ _("Place Order") }}</button>
+                </div>
+            </div>
+            
+            <!-- Fulfillment Method -->
+            <div class="option-group" id="fulfillmentGroup" style="display: none;">
+                <div class="option-label">{{ _("Fulfillment Method") }}</div>
+                <div class="option-buttons">
+                    <button class="option-btn" onclick="selectFulfillment('pickup')">{{ _("Pickup") }}</button>
+                    <button class="option-btn" onclick="selectFulfillment('delivery')">{{ _("Delivery") }}</button>
+                </div>
+            </div>
+            
+            <!-- Schedule Options -->
+            <div class="schedule-options" id="scheduleOptions">
+                <div class="option-label">{{ _("Schedule") }}</div>
+                <div class="schedule-buttons">
+                    <button class="schedule-btn" onclick="selectSchedule('now')">{{ _("Now") }}</button>
+                    <button class="schedule-btn" onclick="selectSchedule('later')">{{ _("Schedule Later") }}</button>
+                </div>
+                
+                <!-- Calendar Container -->
+                <div class="calendar-container" id="calendarContainer">
+                    <div class="calendar-header">
+                        <button class="calendar-nav" onclick="changeMonth(-1)">‹</button>
+                        <div class="calendar-month" id="calendarMonth"></div>
+                        <button class="calendar-nav" onclick="changeMonth(1)">›</button>
+                    </div>
+                    <div class="calendar-grid" id="calendarGrid">
+                        <!-- Calendar will be generated here -->
+                    </div>
+                    <div class="time-slots" id="timeSlots" style="display: none;">
+                        <div class="time-label">{{ _("Approximate Time") }}</div>
+                        <div class="time-grid" id="timeGrid">
+                            <!-- Time slots will be generated here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Selected Schedule Display -->
+                <div class="selected-schedule" id="selectedSchedule" style="display: none;">
+                    <div class="selected-schedule-label">{{ _("Selected:") }}</div>
+                    <div id="scheduleDisplay"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cart-total" style="background: white; border-top: none; padding-top: 0;">
+            <button class="checkout-btn" onclick="checkout()">{{ _("See Items") }}</button>
+            <button class="generate-quote-btn" onclick="generateQuote()" style="display: none; margin-top: 10px; width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; transition: all 0.2s ease;">
+                {{ _("Generate Quote") }}
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Customer Search Modal -->
+<div class="customer-search-overlay" id="customerSearchOverlay">
+    <div class="customer-search-modal">
+        <div class="customer-search-header">{{ _("Select Customer") }}</div>
+        <input type="text" class="customer-search-input" id="customerSearchInput" placeholder="{{ _('Search by name, phone, or email...') }}">
+        <div class="customer-list" id="customerList">
+            <!-- Customer list will be populated here -->
+        </div>
+        <div class="customer-search-actions">
+            <button class="customer-search-cancel" onclick="closeCustomerSearch()">{{ _("Cancel") }}</button>
+        </div>
+    </div>
+</div>
+{% endblock %} 
