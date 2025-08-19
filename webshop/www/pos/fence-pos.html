@@ -1,0 +1,1082 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('Fence POS System') }}{% endblock %}
+
+{% block head_include %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+        overflow-x: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+    }
+
+    .pos-container {
+        display: grid;
+        grid-template-columns: 1fr 400px;
+        grid-template-rows: 60px 1fr;
+        grid-template-areas: 
+            "header header"
+            "main cart";
+        height: 100vh;
+        gap: 0;
+    }
+
+    .pos-header {
+        grid-area: header;
+        background: linear-gradient(135deg, #2c3e50, #34495e);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
+
+    .pos-header h1 {
+        font-size: 20px;
+        font-weight: 600;
+    }
+
+    .header-controls {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .header-btn {
+        padding: 8px 16px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.1);
+        color: white;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-size: 14px;
+        min-height: 44px;
+        min-width: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .header-btn:hover, .header-btn:active {
+        background: rgba(255,255,255,0.2);
+        border-color: rgba(255,255,255,0.5);
+    }
+
+    .main-area {
+        grid-area: main;
+        background: white;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .quick-calculator {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: 20px;
+    }
+
+    .calculator-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 15px;
+        align-items: end;
+    }
+
+    .input-group {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .input-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6c757d;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .input-field {
+        padding: 12px 16px;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 500;
+        transition: border-color 0.3s;
+        min-height: 44px;
+    }
+
+    .input-field:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+    }
+
+    .calc-btn {
+        padding: 12px 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .calc-btn:hover, .calc-btn:active {
+        background: #0056b3;
+        transform: translateY(-1px);
+    }
+
+    .products-area {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .products-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .products-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .view-toggle {
+        display: flex;
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+    .view-btn {
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.3s;
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .view-btn.active {
+        background: #007bff;
+        color: white;
+    }
+
+    .products-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 15px;
+    }
+
+    .product-card {
+        background: white;
+        border: 2px solid #dee2e6;
+        border-radius: 12px;
+        padding: 15px;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-align: center;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .product-card:hover, .product-card:active {
+        border-color: #007bff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,123,255,0.2);
+    }
+
+    .product-icon {
+        font-size: 24px;
+        margin-bottom: 8px;
+    }
+
+    .product-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 4px;
+    }
+
+    .product-price {
+        font-size: 16px;
+        font-weight: 700;
+        color: #28a745;
+    }
+
+    .cart-area {
+        grid-area: cart;
+        background: white;
+        border-left: 1px solid #dee2e6;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .cart-header {
+        background: #007bff;
+        color: white;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .cart-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+
+    .cart-subtitle {
+        font-size: 14px;
+        opacity: 0.9;
+    }
+
+    .cart-items {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .cart-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+
+    .cart-item-info {
+        flex: 1;
+    }
+
+    .cart-item-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 4px;
+    }
+
+    .cart-item-details {
+        font-size: 12px;
+        color: #6c757d;
+    }
+
+    .cart-item-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .qty-btn {
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 50%;
+        background: #007bff;
+        color: white;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+    }
+
+    .qty-btn:hover, .qty-btn:active {
+        background: #0056b3;
+        transform: scale(1.1);
+    }
+
+    .qty-display {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2c3e50;
+        min-width: 30px;
+        text-align: center;
+    }
+
+    .cart-item-price {
+        font-size: 14px;
+        font-weight: 700;
+        color: #28a745;
+        margin-left: 10px;
+    }
+
+    .cart-summary {
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        padding: 20px;
+    }
+
+    .summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .summary-label {
+        font-size: 14px;
+        color: #6c757d;
+    }
+
+    .summary-value {
+        font-size: 14px;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .summary-total {
+        border-top: 1px solid #dee2e6;
+        padding-top: 10px;
+        margin-top: 10px;
+    }
+
+    .summary-total .summary-label {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .summary-total .summary-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #28a745;
+    }
+
+    .checkout-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .checkout-btn {
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .checkout-btn.primary {
+        background: #28a745;
+        color: white;
+    }
+
+    .checkout-btn.primary:hover, .checkout-btn.primary:active {
+        background: #218838;
+        transform: translateY(-1px);
+    }
+
+    .checkout-btn.secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .checkout-btn.secondary:hover, .checkout-btn.secondary:active {
+        background: #545b62;
+    }
+
+    .empty-cart {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+    }
+
+    .empty-cart-icon {
+        font-size: 48px;
+        margin-bottom: 15px;
+        opacity: 0.5;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        display: none;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #dee2e6;
+        border-top: 4px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 1024px) {
+        .pos-container {
+            grid-template-columns: 1fr;
+            grid-template-areas: 
+                "header"
+                "main"
+                "cart";
+        }
+        
+        .cart-area {
+            border-left: none;
+            border-top: 1px solid #dee2e6;
+            max-height: 50vh;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .pos-header {
+            padding: 0 15px;
+        }
+        
+        .pos-header h1 {
+            font-size: 18px;
+        }
+        
+        .calculator-grid {
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        
+        .products-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        
+        .product-card {
+            min-height: 100px;
+            padding: 12px;
+        }
+        
+        .cart-items {
+            padding: 15px;
+        }
+        
+        .cart-summary {
+            padding: 15px;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .products-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .header-controls {
+            gap: 10px;
+        }
+        
+        .header-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+    }
+
+    /* Touch enhancements */
+    @media (hover: none) and (pointer: coarse) {
+        .product-card:hover {
+            transform: none;
+        }
+        
+        .product-card:active {
+            transform: scale(0.98);
+        }
+        
+        .calc-btn:hover {
+            transform: none;
+        }
+        
+        .calc-btn:active {
+            transform: scale(0.98);
+        }
+        
+        .checkout-btn:hover {
+            transform: none;
+        }
+        
+        .checkout-btn:active {
+            transform: scale(0.98);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="pos-container">
+    <!-- Header -->
+    <div class="pos-header">
+        <h1>🏗️ Fence POS System</h1>
+        <div class="header-controls">
+            <button class="header-btn" onclick="fencePOS.newSale()">🆕 New Sale</button>
+            <button class="header-btn" onclick="fencePOS.viewHistory()">📋 History</button>
+            <button class="header-btn" onclick="fencePOS.settings()">⚙️ Settings</button>
+        </div>
+    </div>
+
+    <!-- Main Area -->
+    <div class="main-area">
+        <!-- Quick Calculator -->
+        <div class="quick-calculator">
+            <div class="calculator-grid">
+                <div class="input-group">
+                    <label class="input-label">Length (ft)</label>
+                    <input type="number" class="input-field" id="quickLength" placeholder="100" min="1" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label class="input-label">Fence Style</label>
+                    <select class="input-field" id="quickStyle">
+                        <option value="vinyl-privacy">Vinyl Privacy</option>
+                        <option value="vinyl-picket">Vinyl Picket</option>
+                        <option value="aluminum-privacy">Aluminum Privacy</option>
+                        <option value="wood-privacy">Wood Privacy</option>
+                        <option value="chain-link">Chain Link</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <button class="calc-btn" onclick="fencePOS.quickCalculate()">
+                        🧮 Calculate & Add
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products Area -->
+        <div class="products-area">
+            <div class="products-header">
+                <h2 class="products-title">Fence Products</h2>
+                <div class="view-toggle">
+                    <button class="view-btn active" data-view="grid">⊞</button>
+                    <button class="view-btn" data-view="list">☰</button>
+                </div>
+            </div>
+
+            <div class="products-grid" id="productsGrid">
+                <!-- Products will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Cart Area -->
+    <div class="cart-area">
+        <div class="cart-header">
+            <h2 class="cart-title">Current Sale</h2>
+            <p class="cart-subtitle" id="cartSubtitle">0 items</p>
+        </div>
+
+        <div class="cart-items" id="cartItems">
+            <div class="empty-cart">
+                <div class="empty-cart-icon">🛒</div>
+                <p>Cart is empty</p>
+                <p style="font-size: 12px; margin-top: 5px;">Add items to begin</p>
+            </div>
+        </div>
+
+        <div class="cart-summary">
+            <div class="summary-row">
+                <span class="summary-label">Subtotal:</span>
+                <span class="summary-value" id="cartSubtotal">$0.00</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Tax (8%):</span>
+                <span class="summary-value" id="cartTax">$0.00</span>
+            </div>
+            <div class="summary-row summary-total">
+                <span class="summary-label">Total:</span>
+                <span class="summary-value" id="cartTotal">$0.00</span>
+            </div>
+
+            <div class="checkout-actions">
+                <button class="checkout-btn primary" onclick="fencePOS.checkout()">
+                    💳 Checkout
+                </button>
+                <button class="checkout-btn secondary" onclick="fencePOS.clearCart()">
+                    🗑️ Clear Cart
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+</div>
+
+<script>
+class FencePOS {
+    constructor() {
+        this.cart = [];
+        this.products = [];
+        this.taxRate = 0.08; // 8% tax
+        
+        this.init();
+    }
+    
+    init() {
+        console.log('Initializing Fence POS...');
+        
+        // Load products
+        this.loadProducts();
+        
+        // Initialize event listeners
+        this.initializeEventListeners();
+        
+        console.log('Fence POS initialized successfully');
+    }
+    
+    async loadProducts() {
+        try {
+            this.showLoading(true);
+            
+            // Get fence styles from API
+            const response = await frappe.call({
+                method: 'webshop.api.fence_api.get_fence_calculator_styles'
+            });
+            
+            if (response.message && response.message.success) {
+                const styles = response.message.data || [];
+                
+                // Convert styles to products
+                this.products = styles.map(style => ({
+                    id: style.id,
+                    name: style.name,
+                    icon: style.icon,
+                    price: this.getStylePrice(style.id),
+                    category: 'Fence Panels',
+                    unit: 'per foot'
+                }));
+                
+                // Add common accessories
+                this.products.push(
+                    { id: 'gate-3ft', name: '3ft Gate', icon: '🚪', price: 150, category: 'Gates', unit: 'each' },
+                    { id: 'gate-4ft', name: '4ft Gate', icon: '🚪', price: 175, category: 'Gates', unit: 'each' },
+                    { id: 'post', name: 'Fence Post', icon: '🏗️', price: 25, category: 'Posts', unit: 'each' },
+                    { id: 'hardware', name: 'Hardware Kit', icon: '🔧', price: 8, category: 'Hardware', unit: 'set' },
+                    { id: 'concrete', name: 'Concrete Mix', icon: '🪣', price: 8, category: 'Materials', unit: 'bag' }
+                );
+            } else {
+                // Fallback products
+                this.products = this.getFallbackProducts();
+            }
+            
+            this.renderProducts();
+            
+        } catch (error) {
+            console.error('Error loading products:', error);
+            this.products = this.getFallbackProducts();
+            this.renderProducts();
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    getFallbackProducts() {
+        return [
+            { id: 'vinyl-privacy', name: 'Vinyl Privacy', icon: '🏠', price: 18, category: 'Panels', unit: 'per foot' },
+            { id: 'vinyl-picket', name: 'Vinyl Picket', icon: '🏠', price: 14, category: 'Panels', unit: 'per foot' },
+            { id: 'aluminum-privacy', name: 'Aluminum Privacy', icon: '🏗️', price: 25, category: 'Panels', unit: 'per foot' },
+            { id: 'wood-privacy', name: 'Wood Privacy', icon: '🌲', price: 12, category: 'Panels', unit: 'per foot' },
+            { id: 'chain-link', name: 'Chain Link', icon: '🔗', price: 8, category: 'Panels', unit: 'per foot' },
+            { id: 'gate-3ft', name: '3ft Gate', icon: '🚪', price: 150, category: 'Gates', unit: 'each' },
+            { id: 'post', name: 'Fence Post', icon: '🏗️', price: 25, category: 'Posts', unit: 'each' },
+            { id: 'hardware', name: 'Hardware Kit', icon: '🔧', price: 8, category: 'Hardware', unit: 'set' }
+        ];
+    }
+    
+    getStylePrice(styleId) {
+        const pricing = {
+            'vinyl-privacy': 18,
+            'vinyl-semi-privacy': 16,
+            'vinyl-picket': 14,
+            'aluminum-privacy': 25,
+            'aluminum-picket': 22,
+            'wood-privacy': 12,
+            'wood-picket': 10,
+            'chain-link': 8
+        };
+        return pricing[styleId] || 15;
+    }
+    
+    renderProducts() {
+        const grid = document.getElementById('productsGrid');
+        if (!grid) return;
+        
+        grid.innerHTML = this.products.map(product => `
+            <div class="product-card" onclick="fencePOS.addProduct('${product.id}')">
+                <div class="product-icon">${product.icon}</div>
+                <div class="product-name">${product.name}</div>
+                <div class="product-price">$${product.price.toFixed(2)} ${product.unit}</div>
+            </div>
+        `).join('');
+    }
+    
+    initializeEventListeners() {
+        // View toggle
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                // View toggle functionality can be implemented here
+            });
+        });
+        
+        // Touch and keyboard support
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.id === 'quickLength') {
+                this.quickCalculate();
+            }
+        });
+    }
+    
+    async quickCalculate() {
+        const length = parseFloat(document.getElementById('quickLength').value);
+        const style = document.getElementById('quickStyle').value;
+        
+        if (!length || length <= 0) {
+            alert('Please enter a valid length');
+            return;
+        }
+        
+        try {
+            this.showLoading(true);
+            
+            // Create simple segments data for calculation
+            const segmentsData = [{
+                path: [
+                    { x: 0, y: 0 },
+                    { x: length * 20, y: 0 } // 20 pixels per foot
+                ],
+                style: style,
+                length: length,
+                scale: 20
+            }];
+            
+            // Calculate materials
+            const response = await frappe.call({
+                method: 'webshop.api.fence_api.calculate_fence_materials',
+                args: {
+                    segments_data: JSON.stringify(segmentsData),
+                    fence_type: style,
+                    color: 'white'
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                const result = response.message.data;
+                const materials = result.materials || {};
+                
+                // Add calculated materials to cart
+                if (materials.panels) {
+                    this.addToCart(`${style}-panels`, `${style.replace('-', ' ').toUpperCase()} Panels`, 
+                                  materials.panels, this.getStylePrice(style), 'panels');
+                }
+                
+                if (materials.posts) {
+                    this.addToCart('fence-posts', 'Fence Posts', materials.posts, 25, 'each');
+                }
+                
+                if (materials.hardware) {
+                    this.addToCart('hardware-kit', 'Hardware Kit', Math.ceil(materials.hardware / 4), 8, 'set');
+                }
+                
+                // Clear input
+                document.getElementById('quickLength').value = '';
+                
+            } else {
+                alert('Calculation failed. Adding basic estimate.');
+                // Fallback calculation
+                const panels = Math.ceil(length / 8);
+                const posts = panels + 1;
+                
+                this.addToCart(`${style}-panels`, `${style.replace('-', ' ').toUpperCase()} Panels`, 
+                              panels, this.getStylePrice(style), 'panels');
+                this.addToCart('fence-posts', 'Fence Posts', posts, 25, 'each');
+            }
+            
+        } catch (error) {
+            console.error('Quick calculation error:', error);
+            alert('Calculation failed. Please try again.');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    addProduct(productId) {
+        const product = this.products.find(p => p.id === productId);
+        if (!product) return;
+        
+        // For fence panels, ask for quantity (length)
+        let quantity = 1;
+        if (product.category === 'Fence Panels') {
+            const input = prompt(`Enter length in feet for ${product.name}:`, '10');
+            if (!input) return;
+            quantity = parseFloat(input);
+            if (!quantity || quantity <= 0) {
+                alert('Please enter a valid length');
+                return;
+            }
+        } else {
+            const input = prompt(`Enter quantity for ${product.name}:`, '1');
+            if (!input) return;
+            quantity = parseInt(input);
+            if (!quantity || quantity <= 0) {
+                alert('Please enter a valid quantity');
+                return;
+            }
+        }
+        
+        this.addToCart(product.id, product.name, quantity, product.price, product.unit);
+    }
+    
+    addToCart(id, name, quantity, price, unit) {
+        // Check if item already exists in cart
+        const existingItem = this.cart.find(item => item.id === id);
+        
+        if (existingItem) {
+            existingItem.quantity += quantity;
+        } else {
+            this.cart.push({
+                id: id,
+                name: name,
+                quantity: quantity,
+                price: price,
+                unit: unit,
+                total: quantity * price
+            });
+        }
+        
+        this.updateCart();
+    }
+    
+    updateCartItemQuantity(id, newQuantity) {
+        const item = this.cart.find(item => item.id === id);
+        if (!item) return;
+        
+        if (newQuantity <= 0) {
+            this.removeFromCart(id);
+        } else {
+            item.quantity = newQuantity;
+            item.total = item.quantity * item.price;
+            this.updateCart();
+        }
+    }
+    
+    removeFromCart(id) {
+        this.cart = this.cart.filter(item => item.id !== id);
+        this.updateCart();
+    }
+    
+    updateCart() {
+        const cartItems = document.getElementById('cartItems');
+        const cartSubtitle = document.getElementById('cartSubtitle');
+        
+        if (this.cart.length === 0) {
+            cartItems.innerHTML = `
+                <div class="empty-cart">
+                    <div class="empty-cart-icon">🛒</div>
+                    <p>Cart is empty</p>
+                    <p style="font-size: 12px; margin-top: 5px;">Add items to begin</p>
+                </div>
+            `;
+            cartSubtitle.textContent = '0 items';
+        } else {
+            cartItems.innerHTML = this.cart.map(item => `
+                <div class="cart-item">
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.name}</div>
+                        <div class="cart-item-details">${item.quantity} ${item.unit} × $${item.price.toFixed(2)}</div>
+                    </div>
+                    <div class="cart-item-controls">
+                        <button class="qty-btn" onclick="fencePOS.updateCartItemQuantity('${item.id}', ${item.quantity - 1})">−</button>
+                        <span class="qty-display">${item.quantity}</span>
+                        <button class="qty-btn" onclick="fencePOS.updateCartItemQuantity('${item.id}', ${item.quantity + 1})">+</button>
+                        <span class="cart-item-price">$${item.total.toFixed(2)}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            const totalItems = this.cart.reduce((sum, item) => sum + item.quantity, 0);
+            cartSubtitle.textContent = `${totalItems} item${totalItems !== 1 ? 's' : ''}`;
+        }
+        
+        this.updateCartSummary();
+    }
+    
+    updateCartSummary() {
+        const subtotal = this.cart.reduce((sum, item) => sum + item.total, 0);
+        const tax = subtotal * this.taxRate;
+        const total = subtotal + tax;
+        
+        document.getElementById('cartSubtotal').textContent = `$${subtotal.toFixed(2)}`;
+        document.getElementById('cartTax').textContent = `$${tax.toFixed(2)}`;
+        document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
+    }
+    
+    async checkout() {
+        if (this.cart.length === 0) {
+            alert('Cart is empty');
+            return;
+        }
+        
+        const customerName = prompt('Customer Name:', '');
+        if (!customerName) return;
+        
+        const customerPhone = prompt('Customer Phone (optional):', '');
+        
+        try {
+            this.showLoading(true);
+            
+            // Create sale record
+            const saleData = {
+                customer_name: customerName,
+                customer_phone: customerPhone,
+                items: this.cart,
+                subtotal: this.cart.reduce((sum, item) => sum + item.total, 0),
+                tax: this.cart.reduce((sum, item) => sum + item.total, 0) * this.taxRate,
+                total: this.cart.reduce((sum, item) => sum + item.total, 0) * (1 + this.taxRate),
+                timestamp: new Date().toISOString()
+            };
+            
+            // Save to local storage for now (in real implementation, save to server)
+            const sales = JSON.parse(localStorage.getItem('fencePOS_sales') || '[]');
+            sales.push(saleData);
+            localStorage.setItem('fencePOS_sales', JSON.stringify(sales));
+            
+            // Show success message
+            alert(`Sale completed!\nCustomer: ${customerName}\nTotal: $${saleData.total.toFixed(2)}`);
+            
+            // Clear cart
+            this.clearCart();
+            
+        } catch (error) {
+            console.error('Checkout error:', error);
+            alert('Checkout failed. Please try again.');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+    
+    clearCart() {
+        this.cart = [];
+        this.updateCart();
+    }
+    
+    newSale() {
+        if (this.cart.length > 0) {
+            if (confirm('Clear current cart and start new sale?')) {
+                this.clearCart();
+            }
+        }
+    }
+    
+    viewHistory() {
+        const sales = JSON.parse(localStorage.getItem('fencePOS_sales') || '[]');
+        
+        if (sales.length === 0) {
+            alert('No sales history found');
+            return;
+        }
+        
+        let historyText = 'Sales History:\n\n';
+        sales.slice(-10).reverse().forEach((sale, index) => {
+            const date = new Date(sale.timestamp).toLocaleDateString();
+            historyText += `${index + 1}. ${sale.customer_name} - $${sale.total.toFixed(2)} (${date})\n`;
+        });
+        
+        alert(historyText);
+    }
+    
+    settings() {
+        const newTaxRate = prompt(`Current tax rate: ${(this.taxRate * 100).toFixed(1)}%\nEnter new tax rate (%):`);
+        
+        if (newTaxRate !== null) {
+            const rate = parseFloat(newTaxRate) / 100;
+            if (!isNaN(rate) && rate >= 0 && rate <= 1) {
+                this.taxRate = rate;
+                this.updateCartSummary();
+                localStorage.setItem('fencePOS_taxRate', rate.toString());
+                alert(`Tax rate updated to ${(rate * 100).toFixed(1)}%`);
+            } else {
+                alert('Invalid tax rate');
+            }
+        }
+    }
+    
+    showLoading(show) {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.style.display = show ? 'flex' : 'none';
+        }
+    }
+}
+
+// Initialize POS system
+let fencePOS;
+document.addEventListener('DOMContentLoaded', () => {
+    fencePOS = new FencePOS();
+    
+    // Load saved tax rate
+    const savedTaxRate = localStorage.getItem('fencePOS_taxRate');
+    if (savedTaxRate) {
+        fencePOS.taxRate = parseFloat(savedTaxRate);
+    }
+});
+
+// Make globally accessible
+window.fencePOS = fencePOS;
+</script>
+{% endblock %}

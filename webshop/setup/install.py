@@ -75,6 +75,14 @@ def add_custom_fields():
 				"label": "Published In Website",
 				"read_only": 1,
 				"no_copy": 1,
+			},
+			{
+				"default": 0,
+				"fieldname": "custom_popular",
+				"fieldtype": "Check",
+				"label": "Popular Item",
+				"insert_after": "published_in_website",
+				"description": "Mark this item as popular for POS display",
 			}
 		],
 		"Item Group": [

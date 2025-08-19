@@ -81,6 +81,14 @@
 
 		<!-- Right section -->
 		<div class="col-md-4">
+			<!-- POS Delivery Details Section -->
+			<div id="pos-delivery-details" class="mb-3 frappe-card p-5" style="display: none;">
+				<h5>{{ _("Delivery Details") }}</h5>
+				<div id="pos-delivery-content">
+					<!-- Delivery details will be populated by JavaScript -->
+				</div>
+			</div>
+
 			<div class="cart-payment-addresses">
 				<!-- Apply Coupon Code  -->
 				{% set show_coupon_code = cart_settings.show_apply_coupon_code_in_website and cart_settings.enable_checkout %}

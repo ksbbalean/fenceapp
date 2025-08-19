@@ -1,0 +1,577 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('Fence Drawing Calculator') }}{% endblock %}
+
+{% block head_include %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+    }
+
+    .fence-calculator-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        display: grid;
+        grid-template-columns: 1fr 400px;
+        gap: 30px;
+        min-height: 100vh;
+    }
+
+    .drawing-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .drawing-header {
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        color: white;
+        padding: 25px 30px;
+        text-align: center;
+    }
+
+    .drawing-header h1 {
+        font-size: 28px;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }
+
+    .drawing-header p {
+        font-size: 16px;
+        opacity: 0.9;
+    }
+
+    .drawing-canvas-container {
+        padding: 30px;
+        position: relative;
+    }
+
+    #fenceCanvas {
+        width: 100%;
+        height: 500px;
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        background: #fafafa;
+        cursor: crosshair;
+        transition: border-color 0.3s;
+    }
+
+    #fenceCanvas:hover {
+        border-color: #007bff;
+    }
+
+    .canvas-controls {
+        margin-top: 20px;
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+
+    .canvas-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .canvas-btn.primary {
+        background: #007bff;
+        color: white;
+    }
+
+    .canvas-btn.primary:hover {
+        background: #0056b3;
+    }
+
+    .canvas-btn.secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .canvas-btn.secondary:hover {
+        background: #545b62;
+    }
+
+    .canvas-btn.danger {
+        background: #dc3545;
+        color: white;
+    }
+
+    .canvas-btn.danger:hover {
+        background: #c82333;
+    }
+
+    .canvas-btn.success {
+        background: #28a745;
+        color: white;
+    }
+
+    .canvas-btn.success:hover {
+        background: #218838;
+    }
+
+    .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .sidebar-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .section-header {
+        background: #f8f9fa;
+        padding: 20px;
+        border-bottom: 1px solid #dee2e6;
+        font-weight: 600;
+        color: #495057;
+        font-size: 16px;
+    }
+
+    .section-content {
+        padding: 20px;
+    }
+
+    .fence-styles-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .fence-style-card {
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: white;
+    }
+
+    .fence-style-card:hover {
+        border-color: #007bff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,123,255,0.2);
+    }
+
+    .fence-style-card.selected {
+        border-color: #007bff;
+        background: #f8f9ff;
+    }
+
+    .fence-style-icon {
+        font-size: 32px;
+        margin-bottom: 10px;
+    }
+
+    .fence-style-name {
+        font-weight: 500;
+        color: #495057;
+        font-size: 14px;
+    }
+
+    .fence-style-height {
+        font-size: 12px;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+
+    .color-options {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+
+    .color-option {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 3px solid #dee2e6;
+        cursor: pointer;
+        transition: all 0.3s;
+        position: relative;
+    }
+
+    .color-option:hover {
+        transform: scale(1.1);
+    }
+
+    .color-option.selected {
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0,123,255,0.3);
+    }
+
+    .color-option.selected::after {
+        content: '✓';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    }
+
+    .measurement-input {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    .measurement-input label {
+        font-weight: 500;
+        color: #495057;
+        min-width: 80px;
+    }
+
+    .measurement-input input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .measurement-input input:focus {
+        outline: none;
+        border-color: #007bff;
+    }
+
+    .measurement-input select {
+        padding: 8px 12px;
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        font-size: 14px;
+        background: white;
+    }
+
+    .current-layout {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+
+    .layout-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .layout-item:last-child {
+        border-bottom: none;
+    }
+
+    .layout-item-name {
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .layout-item-value {
+        color: #6c757d;
+        font-size: 14px;
+    }
+
+    .estimate-summary {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .estimate-total {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+
+    .estimate-details {
+        font-size: 14px;
+        opacity: 0.9;
+    }
+
+    .action-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 20px;
+    }
+
+    .action-btn {
+        padding: 15px 20px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 16px;
+        transition: all 0.3s;
+        text-align: center;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .action-btn.primary {
+        background: #007bff;
+        color: white;
+    }
+
+    .action-btn.primary:hover {
+        background: #0056b3;
+        transform: translateY(-2px);
+    }
+
+    .action-btn.secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .action-btn.secondary:hover {
+        background: #545b62;
+    }
+
+    .action-btn.success {
+        background: #28a745;
+        color: white;
+    }
+
+    .action-btn.success:hover {
+        background: #218838;
+    }
+
+    .tooltip {
+        position: absolute;
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 1000;
+        display: none;
+    }
+
+    .measurement-display {
+        position: absolute;
+        background: rgba(0,123,255,0.9);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        pointer-events: none;
+        z-index: 100;
+    }
+
+    .grid-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 50;
+    }
+
+    .grid-line {
+        stroke: #e9ecef;
+        stroke-width: 1;
+        opacity: 0.5;
+    }
+
+    .snap-point {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        background: #007bff;
+        border-radius: 50%;
+        border: 2px solid white;
+        pointer-events: none;
+        z-index: 75;
+        display: none;
+    }
+
+    @media (max-width: 1200px) {
+        .fence-calculator-container {
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        
+        .sidebar {
+            order: -1;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .fence-calculator-container {
+            padding: 10px;
+        }
+        
+        .drawing-header h1 {
+            font-size: 24px;
+        }
+        
+        .fence-styles-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .canvas-controls {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="fence-calculator-container">
+    <!-- Drawing Section -->
+    <div class="drawing-section">
+        <div class="drawing-header">
+            <h1>Draw My Fence</h1>
+            <p>Click and drag to draw your fence layout. Get an accurate estimate in minutes!</p>
+        </div>
+        
+        <div class="drawing-canvas-container">
+            <canvas id="fenceCanvas" width="800" height="500"></canvas>
+            <div class="grid-overlay" id="gridOverlay"></div>
+            
+            <div class="canvas-controls">
+                <button class="canvas-btn primary" onclick="fenceCalculator.clearCanvas()">
+                    <span>🗑️</span> Clear Drawing
+                </button>
+                <button class="canvas-btn secondary" onclick="fenceCalculator.undoLastSegment()">
+                    <span>↶</span> Undo
+                </button>
+                <button class="canvas-btn success" onclick="fenceCalculator.toggleGrid()">
+                    <span>⊞</span> Toggle Grid
+                </button>
+                <button class="canvas-btn primary" onclick="fenceCalculator.autoCalculate()">
+                    <span>🧮</span> Auto Calculate
+                </button>
+                <button class="canvas-btn secondary" onclick="fenceCalculator.exportDrawing()">
+                    <span>📷</span> Export
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <!-- Fence Styles -->
+        <div class="sidebar-section">
+            <div class="section-header">Choose Fence Style</div>
+            <div class="section-content">
+                <div class="fence-styles-grid" id="fenceStylesGrid">
+                    <!-- Fence styles will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Color Options -->
+        <div class="sidebar-section">
+            <div class="section-header">Select Color</div>
+            <div class="section-content">
+                <div class="color-options" id="colorOptions">
+                    <!-- Color options will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Measurements -->
+        <div class="sidebar-section">
+            <div class="section-header">Measurements</div>
+            <div class="section-content">
+                <div class="measurement-input">
+                    <label>Scale:</label>
+                    <select id="scaleSelect">
+                        <option value="1">1 inch = 1 foot</option>
+                        <option value="0.5">1 inch = 2 feet</option>
+                        <option value="0.25">1 inch = 4 feet</option>
+                    </select>
+                </div>
+                
+                <div class="current-layout">
+                    <div class="layout-item">
+                        <span class="layout-item-name">Total Length:</span>
+                        <span class="layout-item-value" id="totalLength">0 ft</span>
+                    </div>
+                    <div class="layout-item">
+                        <span class="layout-item-name">Sections:</span>
+                        <span class="layout-item-value" id="sectionCount">0</span>
+                    </div>
+                    <div class="layout-item">
+                        <span class="layout-item-name">Corners:</span>
+                        <span class="layout-item-value" id="cornerCount">0</span>
+                    </div>
+                    <div class="layout-item">
+                        <span class="layout-item-name">Gates:</span>
+                        <span class="layout-item-value" id="gateCount">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estimate Summary -->
+        <div class="sidebar-section">
+            <div class="section-header">Estimate Summary</div>
+            <div class="section-content">
+                <div class="estimate-summary">
+                    <div class="estimate-total" id="estimateTotal">$0.00</div>
+                    <div class="estimate-details" id="estimateDetails">
+                        Add fence sections to see estimate
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button class="action-btn primary" onclick="fenceCalculator.generateQuote()">
+                        <span>📋</span> Generate Quote
+                    </button>
+                    <button class="action-btn secondary" onclick="fenceCalculator.saveDrawing()">
+                        <span>💾</span> Save Drawing
+                    </button>
+                    <button class="action-btn success" onclick="fenceCalculator.requestEstimate()">
+                        <span>📧</span> Request Estimate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+
+<!-- Snap Points -->
+<div class="snap-point" id="snapPoint"></div>
+{% endblock %}
+
+{% block script %}
+<script type="text/javascript" src="/fence-calculator/fence-calculator.js"></script>
+{% endblock %}
+

@@ -45,6 +45,14 @@
 <div class="pos-container">
     <!-- Material Type Sidebar -->
     <div class="fence-sidebar">
+        <!-- Popular Items Button -->
+        <div class="popular-section">
+            <div class="popular-btn" onclick="selectPopular()" id="popularBtn">
+                <div class="popular-icon">⭐</div>
+                <div class="popular-name">{{ _("Popular Items") }}</div>
+            </div>
+        </div>
+        
         <div class="sidebar-title">{{ _("Material Type") }}</div>
         
         {% for material in material_types %}
@@ -127,15 +135,18 @@
             
             <!-- Height and Color Selection -->
             <div id="optionsView" style="display: none;">
-                <div class="section-title" id="optionsTitle">{{ _("Select Height & Color") }}</div>
+                <div class="section-title" id="optionsTitle">{{ _("Filter by Height & Color (Optional)") }}</div>
+                <div style="margin-bottom: 15px; text-align: center; color: #666; font-size: 14px;">
+                    {{ _("Leave blank to see all products, or select filters to narrow results") }}
+                </div>
                 <div style="margin-bottom: 25px;">
-                    <div class="component-header">{{ _("Height Options") }}</div>
+                    <div class="component-header">{{ _("Height Options") }} <button onclick="window.fencePOS.clearHeight()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
                     <div class="option-grid" id="heightGrid">
                         <!-- Heights will be populated dynamically -->
                     </div>
                 </div>
                 <div style="margin-bottom: 25px;">
-                    <div class="component-header">{{ _("Color Options") }}</div>
+                    <div class="component-header">{{ _("Color Options") }} <button onclick="window.fencePOS.clearColor()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
                     <div class="option-grid" id="colorGrid">
                         <!-- Colors will be populated dynamically -->
                     </div>

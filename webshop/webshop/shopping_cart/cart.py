@@ -87,7 +87,54 @@ def get_billing_addresses(party=None):
 
 
 @frappe.whitelist()
-def place_order():
+def create_delivery_schedule(sales_order_name, pos_config=None):
+	"""
+	Create Delivery Schedule from POS configuration - Whitelisted API
+	Called separately after order placement for better error handling
+	"""
+	try:
+		if not pos_config:
+			return {"success": False, "error": "No POS configuration provided"}
+		
+		# Parse pos_config if it's a string
+		if isinstance(pos_config, str):
+			import json
+			pos_config = json.loads(pos_config)
+		
+		# Check if it's a delivery order
+		if pos_config.get('fulfillmentMethod') != 'delivery':
+			return {"success": False, "error": "Not a delivery order"}
+		
+		# Get the sales order
+		if not frappe.db.exists("Sales Order", sales_order_name):
+			return {"success": False, "error": f"Sales Order {sales_order_name} not found"}
+		
+		sales_order = frappe.get_doc("Sales Order", sales_order_name)
+		
+		# Create delivery schedule
+		delivery_schedule_name = create_delivery_schedule_from_pos(sales_order, pos_config)
+		
+		if delivery_schedule_name:
+			return {
+				"success": True, 
+				"delivery_schedule": delivery_schedule_name,
+				"message": f"Delivery Schedule {delivery_schedule_name} created successfully"
+			}
+		else:
+			return {"success": False, "error": "Failed to create delivery schedule"}
+			
+	except Exception as e:
+		frappe.log_error("Delivery Schedule API Error", f"Error: {str(e)}")
+		return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def place_order(pos_config=None):
+	import json
+	
+	# Log all parameters for debugging
+	frappe.log_error("Place Order Debug", f"Called with pos_config type: {type(pos_config)}")
+	
 	quotation = _get_cart_quotation()
 	cart_settings = frappe.get_cached_doc("Webshop Settings")
 	quotation.company = cart_settings.company
@@ -132,6 +179,12 @@ def place_order():
 	sales_order.flags.ignore_permissions = True
 	sales_order.insert()
 	sales_order.submit()
+
+	frappe.log_error("Place Order Success", f"Sales Order {sales_order.name} created")
+
+	# Note: Delivery schedule creation is now handled by separate API call
+	if pos_config:
+		frappe.log_error("Place Order Info", "POS config received - delivery schedule will be created via separate API")
 
 	if hasattr(frappe.local, "cookie_manager"):
 		frappe.local.cookie_manager.delete_cookie("cart_count")
@@ -818,3 +871,167 @@ def remove_coupon_code():
 	quotation.save()
 
 	return quotation
+
+
+def create_delivery_schedule_from_pos(sales_order, pos_config):
+	"""Create Delivery Schedule record from POS configuration"""
+	# Use explicit global reference to avoid scoping issues
+	import sys
+	frappe_module = sys.modules['frappe']
+	
+	try:
+		frappe_module.log_error("Delivery Schedule Creation", f"Starting with config: {pos_config}")
+		
+		# Check if fence_supply app is installed and Delivery Schedule doctype exists
+		if not frappe_module.db.exists("DocType", "Delivery Schedule"):
+			frappe_module.log_error("Delivery Schedule Error", "Doctype not found - fence_supply app may not be installed")
+			return None
+		
+		# Parse POS configuration
+		raw_delivery_date = pos_config.get('selectedDate')
+		raw_delivery_time = pos_config.get('selectedTime')
+		customer = sales_order.get('customer')
+		
+		frappe_module.log_error("Delivery Schedule Debug", f"Raw Date: {raw_delivery_date}, Raw Time: {raw_delivery_time}, Customer: {customer}")
+		
+		# Validate required fields
+		if not raw_delivery_date:
+			frappe_module.log_error("Delivery Schedule Error", "No delivery date found in POS config")
+			return None
+			
+		if not customer:
+			frappe_module.log_error("Delivery Schedule Error", "No customer found in sales order")
+			return None
+		
+		# Convert date format from US format (M/d/yyyy) to ISO format (YYYY-MM-DD)
+		iso_date = None
+		try:
+			from datetime import datetime
+			frappe_module.log_error("Delivery Schedule Date Start", f"Converting date: {raw_delivery_date}")
+			
+			# Parse US format date (like "8/1/2025" or "8/7/2025")
+			parsed_date = datetime.strptime(raw_delivery_date, '%m/%d/%Y')
+			# Convert to ISO format for MySQL
+			iso_date = parsed_date.strftime('%Y-%m-%d')
+			frappe_module.log_error("Delivery Schedule Date Success", f"Converted {raw_delivery_date} to {iso_date}")
+			
+		except ValueError as ve:
+			frappe_module.log_error("Delivery Schedule Date Error", f"Could not parse date {raw_delivery_date}: {ve}")
+			# Try frappe's date parsing as fallback
+			try:
+				from frappe.utils import getdate
+				iso_date = getdate(raw_delivery_date).strftime('%Y-%m-%d')
+				frappe_module.log_error("Delivery Schedule Date Fallback", f"Frappe conversion: {raw_delivery_date} to {iso_date}")
+			except:
+				frappe_module.log_error("Delivery Schedule Date Final Error", f"All date parsing failed for {raw_delivery_date}")
+				return None
+		
+		# Convert time format from 12-hour to 24-hour if needed
+		formatted_time = None
+		if raw_delivery_time:
+			try:
+				from datetime import datetime
+				frappe_module.log_error("Delivery Schedule Time Start", f"Converting time: {raw_delivery_time}")
+				
+				# Parse 12-hour format (like "3:00 PM")
+				if 'AM' in raw_delivery_time or 'PM' in raw_delivery_time:
+					parsed_time = datetime.strptime(raw_delivery_time, '%I:%M %p')
+					formatted_time = parsed_time.strftime('%H:%M:%S')
+				else:
+					# Assume it's already in 24-hour format, add seconds if missing
+					if len(raw_delivery_time.split(':')) == 2:
+						formatted_time = raw_delivery_time + ':00'
+					else:
+						formatted_time = raw_delivery_time
+				
+				frappe_module.log_error("Delivery Schedule Time Success", f"Converted {raw_delivery_time} to {formatted_time}")
+			except ValueError as ve:
+				frappe_module.log_error("Delivery Schedule Time Error", f"Could not parse time {raw_delivery_time}: {ve}")
+				formatted_time = None
+		
+		# Validate that we have a proper ISO date
+		if not iso_date:
+			frappe_module.log_error("Delivery Schedule Error", "No valid date after conversion")
+			return None
+		
+		frappe_module.log_error("Delivery Schedule Final Values", f"Using Date: {iso_date}, Time: {formatted_time}")
+		
+		# Get delivery address from sales order or POS config
+		delivery_address = None
+		if sales_order.shipping_address_name:
+			try:
+				address_doc = frappe_module.get_doc("Address", sales_order.shipping_address_name)
+				delivery_address = address_doc.get_display()
+			except:
+				delivery_address = "Address not found"
+		
+		# Create Delivery Schedule document
+		delivery_schedule = frappe_module.new_doc("Delivery Schedule")
+		delivery_schedule.customer = customer
+		delivery_schedule.delivery_date = iso_date  # Use converted ISO format
+		
+		frappe_module.log_error("Delivery Schedule Set Date", f"Set delivery_date to: {delivery_schedule.delivery_date}")
+		
+		# Only set delivery_time if it exists and was successfully formatted
+		if formatted_time:
+			delivery_schedule.delivery_time = formatted_time
+			frappe_module.log_error("Delivery Schedule Set Time", f"Set delivery_time to: {delivery_schedule.delivery_time}")
+			
+		delivery_schedule.delivery_address = delivery_address or ""
+		delivery_schedule.status = "Scheduled"
+		
+		# Add notes with POS details
+		pos_notes = []
+		if pos_config.get('selectedCategory'):
+			pos_notes.append(f"Material: {pos_config.get('selectedCategory')}")
+		if pos_config.get('selectedStyle'):
+			pos_notes.append(f"Style: {pos_config.get('selectedStyle')}")
+		if pos_config.get('selectedHeight'):
+			pos_notes.append(f"Height: {pos_config.get('selectedHeight')}")
+		if pos_config.get('selectedColor'):
+			pos_notes.append(f"Color: {pos_config.get('selectedColor')}")
+		
+		note_text = f"Created from POS Order {sales_order.name}"
+		if pos_notes:
+			note_text += ". " + ", ".join(pos_notes)
+		
+		delivery_schedule.notes = note_text
+		
+		# Add items from sales order
+		for item in sales_order.get("items"):
+			delivery_schedule.append("items", {
+				"item_code": item.item_code,
+				"item_name": item.item_name,
+				"qty": item.qty,
+				"uom": item.uom or "Unit"
+			})
+		
+		frappe_module.log_error("Delivery Schedule Pre-Insert", f"About to insert with date: {delivery_schedule.delivery_date}")
+		
+		delivery_schedule.flags.ignore_permissions = True
+		delivery_schedule.insert()
+		
+		frappe_module.log_error("Delivery Schedule Success", f"Created: {delivery_schedule.name}")
+		
+		# Commit the transaction to ensure it's saved
+		frappe_module.db.commit()
+		
+		# Link delivery schedule back to sales order (if custom field exists)
+		try:
+			sales_order.reload()
+			if hasattr(sales_order, 'delivery_schedule'):
+				sales_order.delivery_schedule = delivery_schedule.name
+				sales_order.flags.ignore_permissions = True
+				sales_order.save()
+				frappe_module.db.commit()
+		except Exception as link_error:
+			frappe_module.log_error("Delivery Schedule Link", f"Could not link to sales order: {str(link_error)}")
+		
+		return delivery_schedule.name
+		
+	except Exception as e:
+		frappe_module.log_error("Delivery Schedule Error", f"Creation failed: {str(e)}")
+		import traceback
+		frappe_module.log_error("Delivery Schedule Traceback", traceback.format_exc())
+		# Don't fail the entire order process if delivery schedule creation fails
+		return None

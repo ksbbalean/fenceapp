@@ -1,0 +1,158 @@
+{
+	"actions": [],
+	"creation": "2024-01-23 14:45:00.000000",
+	"doctype": "DocType",
+	"editable_grid": 1,
+	"engine": "InnoDB",
+	"field_order": [
+		"segment_id",
+		"start_x",
+		"start_y",
+		"column_break_4",
+		"end_x",
+		"end_y",
+		"length",
+		"details_section",
+		"fence_style",
+		"fence_color",
+		"height",
+		"column_break_11",
+		"is_gate",
+		"gate_width",
+		"angle",
+		"materials_section",
+		"panels_needed",
+		"posts_needed",
+		"column_break_17",
+		"hardware_needed",
+		"special_requirements"
+	],
+	"fields": [
+		{
+			"fieldname": "segment_id",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Segment ID",
+			"reqd": 1
+		},
+		{
+			"fieldname": "start_x",
+			"fieldtype": "Float",
+			"label": "Start X",
+			"precision": "2"
+		},
+		{
+			"fieldname": "start_y",
+			"fieldtype": "Float",
+			"label": "Start Y",
+			"precision": "2"
+		},
+		{
+			"fieldname": "column_break_4",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "end_x",
+			"fieldtype": "Float",
+			"label": "End X",
+			"precision": "2"
+		},
+		{
+			"fieldname": "end_y",
+			"fieldtype": "Float",
+			"label": "End Y",
+			"precision": "2"
+		},
+		{
+			"fieldname": "length",
+			"fieldtype": "Float",
+			"in_list_view": 1,
+			"label": "Length (ft)",
+			"precision": "2",
+			"reqd": 1
+		},
+		{
+			"fieldname": "details_section",
+			"fieldtype": "Section Break",
+			"label": "Details"
+		},
+		{
+			"fieldname": "fence_style",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Fence Style"
+		},
+		{
+			"fieldname": "fence_color",
+			"fieldtype": "Data",
+			"label": "Fence Color"
+		},
+		{
+			"fieldname": "height",
+			"fieldtype": "Data",
+			"label": "Height"
+		},
+		{
+			"fieldname": "column_break_11",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "is_gate",
+			"fieldtype": "Check",
+			"label": "Is Gate"
+		},
+		{
+			"fieldname": "gate_width",
+			"fieldtype": "Float",
+			"label": "Gate Width (ft)",
+			"precision": "2"
+		},
+		{
+			"fieldname": "angle",
+			"fieldtype": "Float",
+			"label": "Angle (degrees)",
+			"precision": "2"
+		},
+		{
+			"fieldname": "materials_section",
+			"fieldtype": "Section Break",
+			"label": "Materials"
+		},
+		{
+			"fieldname": "panels_needed",
+			"fieldtype": "Int",
+			"label": "Panels Needed"
+		},
+		{
+			"fieldname": "posts_needed",
+			"fieldtype": "Int",
+			"label": "Posts Needed"
+		},
+		{
+			"fieldname": "column_break_17",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "hardware_needed",
+			"fieldtype": "Int",
+			"label": "Hardware Pieces"
+		},
+		{
+			"fieldname": "special_requirements",
+			"fieldtype": "Small Text",
+			"label": "Special Requirements"
+		}
+	],
+	"index_web_pages_for_search": 1,
+	"istable": 1,
+	"links": [],
+	"modified": "2024-01-23 14:45:00.000000",
+	"modified_by": "Administrator",
+	"module": "Webshop",
+	"name": "Fence Segment",
+	"owner": "Administrator",
+	"permissions": [],
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"states": []
+}

@@ -5,6 +5,21 @@
 frappe.provide("webshop.webshop.shopping_cart");
 var shopping_cart = webshop.webshop.shopping_cart;
 
+// Suppress bundling warnings
+if (typeof window.bundled_asset === 'undefined') {
+	window.bundled_asset = function() { return ''; };
+}
+
+// Display POS delivery details if available
+$(document).ready(function() {
+	// Prevent JS bundling errors
+	try {
+		shopping_cart.display_pos_delivery_details();
+	} catch(e) {
+		console.log('Error displaying POS delivery details:', e);
+	}
+});
+
 $.extend(shopping_cart, {
 	show_error: function(title, text) {
 		$("#cart-container").html('<div class="msg-box"><h4>' +
@@ -142,10 +157,39 @@ $.extend(shopping_cart, {
 	place_order: function(btn) {
 		shopping_cart.freeze();
 
+		// Get POS configuration from sessionStorage
+		var posConfig = null;
+		try {
+			var posConfigStr = sessionStorage.getItem('fencePOSConfig');
+			if (posConfigStr) {
+				posConfig = JSON.parse(posConfigStr);
+				console.log('Found POS configuration for delivery:', posConfig);
+				console.log('POS Config details:', {
+					fulfillmentMethod: posConfig.fulfillmentMethod,
+					selectedDate: posConfig.selectedDate,
+					selectedTime: posConfig.selectedTime,
+					selectedCategory: posConfig.selectedCategory
+				});
+			}
+		} catch(e) {
+			console.log('No POS configuration found or error parsing:', e);
+		}
+
+		// Enhanced debugging - log exactly what we're sending
+		var posConfigToSend = JSON.stringify(posConfig);
+		console.log('🚀 SENDING TO BACKEND:');
+		console.log('  - posConfig object:', posConfig);
+		console.log('  - posConfig stringified:', posConfigToSend);
+		console.log('  - posConfig length:', posConfigToSend ? posConfigToSend.length : 0);
+		console.log('  - fulfillmentMethod check:', posConfig ? posConfig.fulfillmentMethod : 'NO CONFIG');
+
 		return frappe.call({
 			type: "POST",
 			method: "webshop.webshop.shopping_cart.cart.place_order",
 			btn: btn,
+			args: {
+				pos_config: posConfigToSend // Ensure it's passed as string
+			},
 			callback: function(r) {
 				if(r.exc) {
 					shopping_cart.unfreeze();
@@ -160,7 +204,24 @@ $.extend(shopping_cart, {
 						.toggle(true);
 				} else {
 					$(btn).hide();
-					window.location.href = '/orders/' + encodeURIComponent(r.message);
+					console.log('Order placed successfully:', r.message);
+					
+					// Feature flag for delivery schedule (set to false to disable)
+					var enableDeliverySchedule = true;
+					
+					// Create delivery schedule if POS config exists
+					if (enableDeliverySchedule && posConfig && posConfig.fulfillmentMethod === 'delivery') {
+						console.log('🚚 Creating delivery schedule for order:', r.message);
+						try {
+							shopping_cart.create_delivery_schedule(r.message, posConfigToSend);
+						} catch(e) {
+							console.log('❌ Error creating delivery schedule, redirecting anyway:', e);
+							window.location.href = '/orders/' + encodeURIComponent(r.message);
+						}
+					} else {
+						console.log('📦 No delivery schedule needed - redirecting to order page');
+						window.location.href = '/orders/' + encodeURIComponent(r.message);
+					}
 				}
 			}
 		});
@@ -233,6 +294,93 @@ $.extend(shopping_cart, {
 			}
 		});
 	},
+
+	create_delivery_schedule: function(sales_order_name, pos_config) {
+		console.log('🚚 Creating delivery schedule via API...');
+		console.log('  - Sales Order:', sales_order_name);
+		console.log('  - POS Config:', pos_config);
+		
+		frappe.call({
+			method: "webshop.webshop.shopping_cart.cart.create_delivery_schedule",
+			args: {
+				sales_order_name: sales_order_name,
+				pos_config: pos_config
+			},
+			callback: function(r) {
+				if (r.message && r.message.success) {
+					console.log('✅ Delivery schedule created:', r.message.delivery_schedule);
+					console.log('📋 Message:', r.message.message);
+				} else {
+					console.log('❌ Failed to create delivery schedule:', r.message ? r.message.error : 'Unknown error');
+				}
+				
+				// Always redirect to order page regardless of delivery schedule result
+				window.location.href = '/orders/' + encodeURIComponent(sales_order_name);
+			},
+			error: function(r) {
+				console.log('❌ Error calling delivery schedule API:', r);
+				// Still redirect to order page
+				window.location.href = '/orders/' + encodeURIComponent(sales_order_name);
+			}
+		});
+	},
+
+	display_pos_delivery_details: function() {
+		try {
+			var posConfigStr = sessionStorage.getItem('fencePOSConfig');
+			if (posConfigStr) {
+				var posConfig = JSON.parse(posConfigStr);
+				
+				// Only show if it's a delivery order
+				if (posConfig.fulfillmentMethod === 'delivery' && posConfig.selectedDate) {
+					var deliveryDetailsHtml = '';
+					
+					// Fulfillment method
+					deliveryDetailsHtml += '<div class="mb-2"><strong>Method:</strong> ' + 
+						(posConfig.fulfillmentMethod === 'delivery' ? 'Delivery' : 'Pickup') + '</div>';
+					
+					// Delivery date
+					if (posConfig.selectedDate) {
+						var formattedDate = new Date(posConfig.selectedDate).toLocaleDateString();
+						deliveryDetailsHtml += '<div class="mb-2"><strong>Date:</strong> ' + formattedDate + '</div>';
+					}
+					
+					// Delivery time
+					if (posConfig.selectedTime) {
+						deliveryDetailsHtml += '<div class="mb-2"><strong>Time:</strong> ' + posConfig.selectedTime + '</div>';
+					}
+					
+					// Fence specifications
+					if (posConfig.selectedCategory || posConfig.selectedStyle || posConfig.selectedHeight || posConfig.selectedColor) {
+						deliveryDetailsHtml += '<hr><div class="mt-3"><strong>Fence Specifications:</strong></div>';
+						
+						if (posConfig.selectedCategory) {
+							deliveryDetailsHtml += '<div><small>Material: ' + posConfig.selectedCategory + '</small></div>';
+						}
+						if (posConfig.selectedStyle) {
+							deliveryDetailsHtml += '<div><small>Style: ' + posConfig.selectedStyle + '</small></div>';
+						}
+						if (posConfig.selectedHeight) {
+							deliveryDetailsHtml += '<div><small>Height: ' + posConfig.selectedHeight + '</small></div>';
+						}
+						if (posConfig.selectedColor) {
+							deliveryDetailsHtml += '<div><small>Color: ' + posConfig.selectedColor + '</small></div>';
+						}
+					}
+					
+					// Customer info
+					if (posConfig.selectedCustomer && posConfig.selectedCustomer.name) {
+						deliveryDetailsHtml += '<hr><div class="mt-3"><strong>Customer:</strong> ' + posConfig.selectedCustomer.name + '</div>';
+					}
+					
+					$('#pos-delivery-content').html(deliveryDetailsHtml);
+					$('#pos-delivery-details').show();
+				}
+			}
+		} catch(e) {
+			console.log('Error displaying POS delivery details:', e);
+		}
+	}
 });
 
 frappe.ready(function() {

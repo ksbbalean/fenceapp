@@ -38,6 +38,23 @@ def get_fence_categories():
             ORDER BY i.custom_material_type
         """, as_dict=True)
         
+        # Also check for custom_material_class if no material_type found
+        if not material_types:
+            material_classes = frappe.db.sql("""
+                SELECT DISTINCT 
+                    i.custom_material_class as name,
+                    i.custom_material_class as material_type_name,
+                    '' as image
+                FROM `tabItem` i
+                WHERE i.custom_material_class IS NOT NULL 
+                    AND i.custom_material_class != ''
+                    AND i.disabled = 0
+                ORDER BY i.custom_material_class
+            """, as_dict=True)
+            
+            if material_classes:
+                material_types = material_classes
+        
         if material_types:
             frappe.log_error(f"Found {len(material_types)} material types from custom_material_type field")
             return material_types

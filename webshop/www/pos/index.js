@@ -262,9 +262,11 @@ class FencePOS {
         this.selectedStyle = null;
         this.selectedHeight = null;
         this.selectedColor = null;
+        this.isPopularMode = false; // Reset popular mode when selecting category
         
         // Update sidebar button states
         document.querySelectorAll('.fence-type-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('popularBtn')?.classList.remove('active');
         const categoryBtn = document.querySelector(`[data-category="${category}"]`);
         if (categoryBtn) {
             categoryBtn.classList.add('active');
@@ -272,6 +274,73 @@ class FencePOS {
         
         // Show style view
         await this.showStyleView();
+    }
+    
+    async selectPopular() {
+        console.log('Selecting Popular Items');
+        this.isPopularMode = true;
+        this.selectedCategory = null;
+        this.selectedStyle = null;
+        this.selectedHeight = null;
+        this.selectedColor = null;
+        
+        // Update button states
+        document.querySelectorAll('.fence-type-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('popularBtn').classList.add('active');
+        
+        // Show material type filter for popular items
+        await this.showPopularMaterialTypeView();
+    }
+    
+    async showPopularMaterialTypeView() {
+        this.currentView = 'popular-material';
+        
+        // Hide other views
+        document.getElementById('categoryView').style.display = 'none';
+        document.getElementById('styleView').style.display = 'block'; // Reuse style view for layout
+        document.getElementById('optionsView').style.display = 'none';
+        document.getElementById('componentView').style.display = 'none';
+        
+        // Update the style view title and content for popular material selection
+        const styleTitle = document.querySelector('#styleView .view-title');
+        if (styleTitle) {
+            styleTitle.textContent = 'Popular Items - Select Material Type';
+        }
+        
+        const styleGrid = document.getElementById('styleGrid');
+        if (!styleGrid) return;
+        
+        // Create material type options for popular items
+        const materialTypes = [
+            { id: 'all', name: 'All Popular Items', icon: '⭐' },
+            { id: 'Vinyl', name: 'Popular Vinyl', icon: '🏠' },
+            { id: 'Aluminum', name: 'Popular Aluminum', icon: '🔧' },
+            { id: 'Wood', name: 'Popular Wood', icon: '🌲' }
+        ];
+        
+        styleGrid.innerHTML = materialTypes.map(material => `
+            <div class="style-option" onclick="selectPopularMaterial('${material.id}')">
+                <div class="style-icon">${material.icon}</div>
+                <div class="style-name">${material.name}</div>
+            </div>
+        `).join('');
+    }
+    
+    async selectPopularMaterial(materialType) {
+        console.log('Selecting popular material type:', materialType);
+        
+        if (materialType === 'all') {
+            this.selectedCategory = null; // Show all popular items
+        } else {
+            this.selectedCategory = materialType; // Filter by material type
+        }
+        
+        // Update the selected material type visually
+        document.querySelectorAll('.style-option').forEach(option => option.classList.remove('selected'));
+        event.target.closest('.style-option').classList.add('selected');
+        
+        // Show popular items filtered by material type
+        await this.showComponentView();
     }
     
     async showStyleView() {
@@ -283,22 +352,28 @@ class FencePOS {
         document.getElementById('optionsView').style.display = 'none';
         document.getElementById('componentView').style.display = 'none';
         
-        // Default styles for fence types
+        // Updated styles for fence types - mapped to new custom_style field values
         const fenceStyles = {
             vinyl: [
-                { id: 'privacy', name: 'Privacy Style', description: 'Full privacy panels' },
-                { id: 'picket', name: 'Picket Style', description: 'Classic picket design' },
-                { id: 'ranch', name: 'Ranch Rail', description: '2 or 3 rail ranch style' }
+                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
+                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
+                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
+                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
+                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
             ],
             aluminum: [
-                { id: 'ornamental', name: 'Ornamental', description: 'Decorative aluminum' },
-                { id: 'pool', name: 'Pool Code', description: 'Meets pool safety codes' },
-                { id: 'flat', name: 'Flat Top', description: 'Modern flat top design' }
+                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
+                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
+                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
+                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
+                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
             ],
             'pressure-treated': [
-                { id: 'dogear', name: 'Dog Ear', description: 'Traditional dog ear boards' },
-                { id: 'shadowbox', name: 'Shadowbox', description: 'Alternating board design' },
-                { id: 'board-on-board', name: 'Board on Board', description: 'Overlapping boards' }
+                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
+                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
+                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
+                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
+                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
             ]
         };
         
@@ -313,13 +388,13 @@ class FencePOS {
         `).join('');
     }
     
-    selectStyle(styleId) {
+    async selectStyle(styleId) {
         console.log('Selecting style:', styleId);
         this.selectedStyle = styleId;
-        this.showOptionsView();
+        await this.showOptionsView();
     }
     
-    showOptionsView() {
+    async showOptionsView() {
         this.currentView = 'options';
         
         // Hide other views
@@ -328,21 +403,8 @@ class FencePOS {
         document.getElementById('optionsView').style.display = 'block';
         document.getElementById('componentView').style.display = 'none';
         
-        // Default options
-        const heightOptions = ['4\'', '5\'', '6\'', '8\''];
-        const colorOptions = ['White', 'Tan', 'Khaki'];
-        
-        // Populate height grid
-        const heightGrid = document.getElementById('heightGrid');
-        heightGrid.innerHTML = heightOptions.map(height => `
-            <div class="option-button" onclick="window.fencePOS.selectHeight('${height.replace(/'/g, "\\'")}');event.stopPropagation();" id="height-${height.replace(/'/g, '')}">${height}</div>
-        `).join('');
-        
-        // Populate color grid
-        const colorGrid = document.getElementById('colorGrid');
-        colorGrid.innerHTML = colorOptions.map(color => `
-            <div class="option-button" onclick="window.fencePOS.selectColor('${color}');event.stopPropagation();" id="color-${color.replace(/\s+/g, '-')}">${color}</div>
-        `).join('');
+        // Load dynamic options from item attributes
+        await this.loadDynamicOptions();
     }
     
     selectHeight(height) {
@@ -357,12 +419,21 @@ class FencePOS {
         document.getElementById(`color-${color.replace(/\s+/g, '-')}`).classList.add('selected');
     }
     
+    clearHeight() {
+        console.log('Clearing height selection');
+        this.selectedHeight = null;
+        document.querySelectorAll('#heightGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    clearColor() {
+        console.log('Clearing color selection');
+        this.selectedColor = null;
+        document.querySelectorAll('#colorGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
     async proceedToComponents() {
-        if (!this.selectedHeight || !this.selectedColor) {
-            this.showError('Please select both height and color');
-            return;
-        }
-        
+        // Allow proceeding without height and color selection
+        // Height and color are optional filters that will be applied if selected
         await this.showComponentView();
     }
     
@@ -406,31 +477,82 @@ class FencePOS {
     
     async getProductsFromWebshop() {
         try {
-            console.log('Fetching products for material type:', this.selectedCategory);
+            console.log('Fetching products with filters:', {
+                category: this.selectedCategory,
+                height: this.selectedHeight,
+                color: this.selectedColor,
+                style: this.selectedStyle,
+                isPopularMode: this.isPopularMode
+            });
             
-            // Enhanced filtering with multiple approaches
             let products = [];
             
-            // Method 1: Try custom_material_type filter first (most specific)
-            if (this.selectedCategory) {
-                const response1 = await frappe.call({
-                method: 'webshop.webshop.api.get_product_filter_data', 
-                args: {
-                    query_args: {
-                        field_filters: {
-                            custom_material_type: this.selectedCategory
-                        }
+            // Handle Popular Items mode
+            if (this.isPopularMode) {
+                console.log('Fetching popular items with material filter:', this.selectedCategory);
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.get_popular_items_for_pos',
+                    args: {
+                        price_list: this.currentPriceList,
+                        material_type: this.selectedCategory || 'all'
                     }
-                }
-            });
-                products = response1.message?.items || [];
-            console.log('Products found with custom_material_type:', products.length);
+                });
+                products = response.message?.items || [];
+                console.log('Popular items found:', products.length);
+                return products;
             }
             
-            // Method 2: If no products found, try item_group as fallback
+            // Method 1: Try new template-aware fence POS API (includes has_variants=1 items)
+            if (this.selectedCategory || this.selectedHeight || this.selectedColor || this.selectedStyle) {
+                console.log('Using template-aware fence POS API...');
+                const response1 = await frappe.call({
+                    method: 'webshop.webshop.pos_api.get_fence_items_for_pos',
+                    args: {
+                        category: this.selectedCategory,
+                        height: this.selectedHeight,
+                        color: this.selectedColor,
+                        style: this.selectedStyle,
+                        price_list: this.currentPriceList
+                    }
+                });
+                products = response1.message?.items || [];
+                console.log('Products found with template-aware POS API:', products.length);
+            }
+            
+            // Method 1.5: If no products found with complex filters, try simple template API
+            if (products.length === 0 && this.selectedCategory) {
+                console.log('Trying simple template items API...');
+                const response1_5 = await frappe.call({
+                    method: 'webshop.webshop.pos_api.get_template_items_for_pos',
+                    args: {
+                        category: this.selectedCategory
+                    }
+                });
+                products = response1_5.message?.items || [];
+                console.log('Template items found:', products.length);
+            }
+            
+            // Method 2: If no products found, try custom_material_type filter
+            if (products.length === 0 && this.selectedCategory) {
+                console.log('No products with fence API, trying custom_material_type...');
+                const response2 = await frappe.call({
+                    method: 'webshop.webshop.api.get_product_filter_data', 
+                    args: {
+                        query_args: {
+                            field_filters: {
+                                custom_material_type: this.selectedCategory
+                            }
+                        }
+                    }
+                });
+                products = response2.message?.items || [];
+                console.log('Products found with custom_material_type:', products.length);
+            }
+            
+            // Method 3: If no products found, try item_group as fallback
             if (products.length === 0 && this.selectedCategory) {
                 console.log('No products with custom_material_type, trying item_group...');
-                const response2 = await frappe.call({
+                const response3 = await frappe.call({
                     method: 'webshop.webshop.api.get_product_filter_data',
                     args: {
                         query_args: {
@@ -440,11 +562,11 @@ class FencePOS {
                         }
                     }
                 });
-                products = response2.message?.items || [];
+                products = response3.message?.items || [];
                 console.log('Products found with item_group:', products.length);
             }
             
-            // Method 3: Enhanced direct Website Item query with better filters
+            // Method 4: Enhanced direct Website Item query with better filters
             if (products.length === 0) {
                 console.log('Trying enhanced direct Website Item query...');
                 products = await this.getWebsiteItemsDirectEnhanced();
@@ -532,33 +654,68 @@ class FencePOS {
             
             for (const websiteItem of websiteItems) {
                 try {
-                    // Get comprehensive item data including custom_material_type from Item doctype
+                    // Get comprehensive item data including custom_material_type and custom_material_class from Item doctype
                     const itemResponse = await frappe.call({
                         method: 'frappe.client.get_value',
                         args: {
                             doctype: 'Item',
                             filters: { item_code: websiteItem.item_code },
-                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'standard_rate', 'stock_uom', 'item_group', 'custom_material_type']
+                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'standard_rate', 'stock_uom', 'item_group', 'custom_material_type', 'custom_material_class']
                         }
                     });
                     
                     const itemData = itemResponse.message;
                     
-                    // Enhanced sellability criteria
+                    // Enhanced sellability criteria - only actual sellable items
                     if (itemData && 
                         itemData.is_sales_item === 1 && 
                         itemData.disabled === 0 && 
                         itemData.has_variants === 0) {
                         
-                        // Additional category filtering using custom_material_type from Item
+                        // Enhanced filtering using custom_material_type, custom_material_class, and selection criteria
                         let includeItem = true;
+                        
+                        // Category/Material filtering
                         if (this.selectedCategory) {
                             const categoryMatch = 
                                 (itemData.custom_material_type && itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) ||
+                                (itemData.custom_material_class && itemData.custom_material_class.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (itemData.item_group && itemData.item_group.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (websiteItem.web_item_name.toLowerCase().includes(this.selectedCategory.toLowerCase()));
                             
-                            includeItem = categoryMatch;
+                            includeItem = includeItem && categoryMatch;
+                        }
+                        
+                        // Height filtering - check item name for height match
+                        if (this.selectedHeight && includeItem) {
+                            const heightMatch = websiteItem.web_item_name.toLowerCase().includes(this.selectedHeight.toLowerCase());
+                            includeItem = includeItem && heightMatch;
+                        }
+                        
+                        // Color filtering - check item name for color match
+                        if (this.selectedColor && includeItem) {
+                            const colorMatch = websiteItem.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase());
+                            includeItem = includeItem && colorMatch;
+                        }
+                        
+                        // Style filtering - use custom_style field first, then custom_material_class as fallback
+                        if (this.selectedStyle && includeItem) {
+                            let styleMatch = false;
+                            
+                            // Primary: Use custom_style field for style filtering
+                            if (itemData.custom_style) {
+                                styleMatch = itemData.custom_style.toLowerCase() === this.selectedStyle.toLowerCase();
+                            }
+                            // Fallback: Use custom_material_class field if custom_style is not set
+                            else if (itemData.custom_material_class) {
+                                styleMatch = itemData.custom_material_class.toLowerCase() === this.selectedStyle.toLowerCase();
+                            }
+                            // If neither field is set, item doesn't match
+                            else {
+                                styleMatch = false;
+                            }
+                            
+                            includeItem = includeItem && styleMatch;
                         }
                         
                         if (includeItem) {
@@ -570,6 +727,7 @@ class FencePOS {
                                 standard_rate: itemData.standard_rate,
                                 stock_uom: itemData.stock_uom,
                                 material_type: itemData.custom_material_type,
+                                material_class: itemData.custom_material_class,
                                 category: itemData.item_group,
                                 isBundle: bundleInfo.isBundle,
                                 bundleItems: bundleInfo.bundleItems || []
@@ -581,10 +739,49 @@ class FencePOS {
                                 console.log('✅ Enhanced sellable item:', websiteItem.item_code, websiteItem.web_item_name);
                             }
                         } else {
-                            console.log('❌ Item filtered out by category:', websiteItem.item_code, {
+                            // Additional debug: show why item was filtered out
+                            let filterReasons = [];
+                            const itemNameLower = websiteItem.web_item_name.toLowerCase();
+                            
+                            if (this.selectedHeight && !itemNameLower.includes(this.selectedHeight.toLowerCase())) {
+                                filterReasons.push(`Height: "${this.selectedHeight}" not found in name`);
+                            }
+                            if (this.selectedColor && !itemNameLower.includes(this.selectedColor.toLowerCase())) {
+                                filterReasons.push(`Color: "${this.selectedColor}" not found in name`);
+                            }
+                            if (this.selectedStyle) {
+                                let styleFound = false;
+                                
+                                // Check custom_style field first
+                                if (itemData.custom_style) {
+                                    styleFound = itemData.custom_style.toLowerCase() === this.selectedStyle.toLowerCase();
+                                }
+                                // Check custom_material_class field as fallback
+                                else if (itemData.custom_material_class) {
+                                    styleFound = itemData.custom_material_class.toLowerCase() === this.selectedStyle.toLowerCase();
+                                }
+                                // If neither field is set, no match
+                                else {
+                                    styleFound = false;
+                                }
+                                
+                                if (!styleFound) {
+                                    filterReasons.push(`Style: "${this.selectedStyle}" not matched (custom_style: ${itemData.custom_style}, custom_material_class: ${itemData.custom_material_class})`);
+                                }
+                            }
+                            
+                            console.log('❌ Item filtered out by selection criteria:', websiteItem.item_code, {
                                 custom_material_type: itemData.custom_material_type,
+                                custom_material_class: itemData.custom_material_class,
                                 item_group: itemData.item_group,
-                                selectedCategory: this.selectedCategory
+                                item_name: websiteItem.web_item_name,
+                                filters: {
+                                    selectedCategory: this.selectedCategory,
+                                    selectedHeight: this.selectedHeight,
+                                    selectedColor: this.selectedColor,
+                                    selectedStyle: this.selectedStyle
+                                },
+                                filterReasons: filterReasons
                             });
                         }
                     } else {
@@ -2543,7 +2740,7 @@ class FencePOS {
             
             console.log('Raw search results:', searchResults.length, 'items found');
             
-            // Filter to only sellable items
+            // Filter to only sellable items and respect material class selection
             const sellableResults = [];
             for (const item of searchResults) {
                 try {
@@ -2552,7 +2749,7 @@ class FencePOS {
                         args: {
                             doctype: 'Item',
                             filters: { item_code: item.item_code },
-                            fieldname: ['is_sales_item', 'has_variants', 'disabled']
+                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'custom_material_type', 'custom_material_class', 'item_group']
                         }
                     });
                     
@@ -2561,7 +2758,40 @@ class FencePOS {
                         itemData.is_sales_item === 1 && 
                         itemData.disabled === 0 && 
                         itemData.has_variants === 0) {
-                        sellableResults.push(item);
+                        
+                        // Enhanced filtering for search results (material, height, color)
+                        let includeItem = true;
+                        
+                        // Category/Material filtering
+                        if (this.selectedCategory) {
+                            const categoryMatch = 
+                                (itemData.custom_material_type && itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) ||
+                                (itemData.custom_material_class && itemData.custom_material_class.toLowerCase() === this.selectedCategory.toLowerCase()) ||
+                                (itemData.item_group && itemData.item_group.toLowerCase() === this.selectedCategory.toLowerCase()) ||
+                                (item.web_item_name.toLowerCase().includes(this.selectedCategory.toLowerCase()));
+                            
+                            includeItem = includeItem && categoryMatch;
+                        }
+                        
+                        // Note: Height and Color filtering for search results now handled by backend API
+                        // If search items appear here, they should already be filtered by attributes
+                        // TODO: Ensure search also uses attribute-based filtering instead of name parsing
+                        
+                        if (includeItem) {
+                            sellableResults.push(item);
+                        } else {
+                            console.log('❌ Search result filtered out by selection criteria:', item.item_code, {
+                                custom_material_type: itemData.custom_material_type,
+                                custom_material_class: itemData.custom_material_class,
+                                item_group: itemData.item_group,
+                                item_name: item.web_item_name,
+                                filters: {
+                                    selectedCategory: this.selectedCategory,
+                                    selectedHeight: this.selectedHeight,
+                                    selectedColor: this.selectedColor
+                                }
+                            });
+                        }
                     }
                 } catch (error) {
                     console.log('Could not validate search result:', item.item_code);
@@ -2806,7 +3036,7 @@ class FencePOS {
         console.log('🔍 Verifying button functionality...');
         
         const functionsToCheck = [
-            'selectCategory', 'selectStyle', 'selectHeight', 'selectColor',
+            'selectCategory', 'selectStyle', 'selectHeight', 'selectColor', 'clearHeight', 'clearColor',
             'selectOrderType', 'selectFulfillment', 'selectSchedule', 'selectTime',
             'changeMonth', 'checkout', 'openCustomerSearch', 'closeCustomerSearch',
             'selectCustomer', 'switchLanguage', 'proceedToComponents',
@@ -3302,7 +3532,276 @@ class FencePOS {
             }
         }, 2000);
     }
+    
+    async loadDynamicOptions() {
+        try {
+            console.log('🔄 Loading dynamic attribute options...');
+            
+            const response = await frappe.call({
+                method: 'webshop.webshop.pos_api.get_dynamic_fence_attributes'
+            });
+            
+            if (response.message && response.message.success) {
+                const data = response.message;
+                const attributes = data.attributes;
+                
+                // Debug: Log all available attributes
+                console.log('📊 Raw API response:', data);
+                console.log('📊 All available attributes:', attributes);
+                console.log('📊 Auto-detected height attribute:', data.height_attribute);
+                console.log('📊 Auto-detected color attribute:', data.color_attribute);
+                
+                // MAINTENANCE FREE: Use dynamically detected height attribute
+                const heightGrid = document.getElementById('heightGrid');
+                const heightAttr = data.height_attribute;
+                if (heightAttr && attributes[heightAttr]) {
+                    const heightOptions = attributes[heightAttr].map(h => h.value);
+                    heightGrid.innerHTML = heightOptions.map(height => `
+                        <div class="option-button" onclick="window.fencePOS.selectHeight('${height.replace(/'/g, "\\'")}');event.stopPropagation();" id="height-${height.replace(/'/g, '')}">${height}</div>
+                    `).join('');
+                    console.log(`✅ Loaded height options from "${heightAttr}":`, heightOptions);
+                } else {
+                    console.log('❌ No height attribute found. Available:', data.available_attributes);
+                    heightGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No height options available</div>';
+                }
+                
+                // MAINTENANCE FREE: Use dynamically detected color attribute
+                const colorGrid = document.getElementById('colorGrid');
+                const colorAttr = data.color_attribute;
+                if (colorAttr && attributes[colorAttr]) {
+                    const colorOptions = attributes[colorAttr].map(c => c.value);
+                    colorGrid.innerHTML = colorOptions.map(color => `
+                        <div class="option-button" onclick="window.fencePOS.selectColor('${color}');event.stopPropagation();" id="color-${color.replace(/\s+/g, '-')}">${color}</div>
+                    `).join('');
+                    console.log(`✅ Loaded color options from "${colorAttr}":`, colorOptions);
+                } else {
+                    console.log('❌ No color attribute found. Available:', data.available_attributes);
+                    colorGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No color options available</div>';
+                }
+                
+            } else {
+                console.warn('No dynamic attributes loaded, using fallback');
+                this.loadFallbackOptions();
+            }
+            
+        } catch (error) {
+            console.error('Error loading dynamic options:', error);
+            this.loadFallbackOptions();
+        }
+    }
+    
+    loadFallbackOptions() {
+        // Fallback to default options if dynamic loading fails
+        const heightOptions = ['4\'', '5\'', '6\'', '8\''];
+        const colorOptions = ['White', 'Tan', 'Khaki'];
+        
+        const heightGrid = document.getElementById('heightGrid');
+        heightGrid.innerHTML = heightOptions.map(height => `
+            <div class="option-button" onclick="window.fencePOS.selectHeight('${height.replace(/'/g, "\\'")}');event.stopPropagation();" id="height-${height.replace(/'/g, '')}">${height}</div>
+        `).join('');
+        
+        const colorGrid = document.getElementById('colorGrid');
+        colorGrid.innerHTML = colorOptions.map(color => `
+            <div class="option-button" onclick="window.fencePOS.selectColor('${color}');event.stopPropagation();" id="color-${color.replace(/\s+/g, '-')}">${color}</div>
+        `).join('');
+        
+        console.log('⚠️ Using fallback options');
+    }
+
+    async setupItemAttributes() {
+        try {
+            console.log('🔧 Optimizing fence items for POS...');
+            
+            // Show loading notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #17a2b8;
+                color: white;
+                padding: 10px 15px;
+                border-radius: 5px;
+                z-index: 9999;
+                font-size: 14px;
+                max-width: 300px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            `;
+            notification.innerHTML = '⚙️ Optimizing items for POS...';
+            document.body.appendChild(notification);
+            
+            const response = await frappe.call({
+                method: 'webshop.webshop.pos_api.setup_fence_item_attributes'
+            });
+            
+            // Remove loading notification
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+            
+            if (response.message && response.message.success) {
+                // Show success notification
+                const successNotification = document.createElement('div');
+                successNotification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: #28a745;
+                    color: white;
+                    padding: 10px 15px;
+                    border-radius: 5px;
+                    z-index: 9999;
+                    font-size: 14px;
+                    max-width: 350px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                `;
+                
+                const result = response.message;
+                successNotification.innerHTML = `
+                    ✅ Items optimized successfully!<br>
+                    <small>Optimized ${result.updated_items} items</small><br>
+                    <small>${result.items_with_attributes} items have attributes</small><br>
+                    <small>${result.test_items_ready_for_pos} items ready for POS</small>
+                `;
+                
+                document.body.appendChild(successNotification);
+                
+                console.log('✅ Fence item optimization completed:', result);
+                console.log('📊 Attribute summary:', result.attribute_summary);
+                
+                // Auto-remove success notification after 5 seconds
+                setTimeout(() => {
+                    if (successNotification.parentNode) {
+                        successNotification.parentNode.removeChild(successNotification);
+                    }
+                }, 5000);
+                
+                // Refresh the current view to show updated items
+                if (this.currentView === 'component') {
+                    console.log('🔄 Refreshing components view to show updated items...');
+                    this.loadComponents();
+                }
+                
+                // Reload dynamic options to show any new attributes
+                if (this.currentView === 'options') {
+                    this.loadDynamicOptions();
+                }
+                
+            } else {
+                this.showError('Optimization completed but some items may not have been updated. Check console for details.');
+                console.error('Setup result:', response.message);
+            }
+            
+        } catch (error) {
+            console.error('Error optimizing items for POS:', error);
+            this.showError('Failed to optimize items: ' + (error.message || 'Unknown error'));
+        }
+    }
 }
+
+// Global functions for onclick handlers - defined early to ensure availability
+// Navigation and category functions
+window.selectCategory = async (category) => {
+    try { await window.fencePOS?.selectCategory(category); } catch(e) { console.error('selectCategory error:', e); }
+}
+
+window.selectPopular = async () => {
+    try { await window.fencePOS?.selectPopular(); } catch(e) { console.error('selectPopular error:', e); }
+};
+
+window.selectPopularMaterial = async (materialType) => {
+    try { await window.fencePOS?.selectPopularMaterial(materialType); } catch(e) { console.error('selectPopularMaterial error:', e); }
+};
+
+window.selectStyle = async (styleId) => {
+    try { await window.fencePOS?.selectStyle(styleId); } catch(e) { console.error('selectStyle error:', e); }
+};
+window.selectHeight = (height) => {
+    try { window.fencePOS?.selectHeight(height); } catch(e) { console.error('selectHeight error:', e); }
+};
+window.selectColor = (color) => {
+    try { window.fencePOS?.selectColor(color); } catch(e) { console.error('selectColor error:', e); }
+};
+window.clearHeight = () => {
+    try { window.fencePOS?.clearHeight(); } catch(e) { console.error('clearHeight error:', e); }
+};
+window.clearColor = () => {
+    try { window.fencePOS?.clearColor(); } catch(e) { console.error('clearColor error:', e); }
+};
+window.proceedToComponents = async () => {
+    try { await window.fencePOS?.proceedToComponents(); } catch(e) { console.error('proceedToComponents error:', e); }
+};
+
+// Order management functions
+window.selectOrderType = (type) => {
+    try { window.fencePOS?.selectOrderType(type); } catch(e) { console.error('selectOrderType error:', e); }
+};
+window.selectFulfillment = (method) => {
+    try { window.fencePOS?.selectFulfillment(method); } catch(e) { console.error('selectFulfillment error:', e); }
+};
+window.selectSchedule = (type) => {
+    try { window.fencePOS?.selectSchedule(type); } catch(e) { console.error('selectSchedule error:', e); }
+};
+window.selectTime = (time) => {
+    try { window.fencePOS?.selectTime(time); } catch(e) { console.error('selectTime error:', e); }
+};
+window.changeMonth = (delta) => {
+    try { window.fencePOS?.changeMonth(delta); } catch(e) { console.error('changeMonth error:', e); }
+};
+
+// Cart and checkout functions
+window.checkout = async () => {
+    try { await window.fencePOS?.checkout(); } catch(e) { console.error('checkout error:', e); }
+};
+window.updateCartItemQuantity = async (itemCode, delta) => {
+    try { await window.fencePOS?.updateCartItemQuantity(itemCode, delta); } catch(e) { console.error('updateCartItemQuantity error:', e); }
+};
+window.updateBundleItemQuantity = async (bundleItemCode, componentItemCode, delta) => {
+    try { await window.fencePOS?.updateBundleItemQuantity(bundleItemCode, componentItemCode, delta); } catch(e) { console.error('updateBundleItemQuantity error:', e); }
+};
+
+// Customer and search functions
+window.openCustomerSearch = () => {
+    try { window.fencePOS?.openCustomerSearch(); } catch(e) { console.error('openCustomerSearch error:', e); }
+};
+window.closeCustomerSearch = () => {
+    try { window.fencePOS?.closeCustomerSearch(); } catch(e) { console.error('closeCustomerSearch error:', e); }
+};
+window.selectCustomer = (customerId, customerName, customerGroup) => {
+    try { window.fencePOS?.selectCustomer(customerId, customerName, customerGroup); } catch(e) { console.error('selectCustomer error:', e); }
+};
+window.clearSearch = () => {
+    try { window.fencePOS?.clearSearch(); } catch(e) { console.error('clearSearch error:', e); }
+};
+
+// Settings functions
+window.switchLanguage = (lang) => {
+    try { window.fencePOS?.switchLanguage(lang); } catch(e) { console.error('switchLanguage error:', e); }
+};
+
+// New customer management functions
+window.showAddCustomerForm = () => {
+    try { window.fencePOS?.showAddCustomerForm(); } catch(e) { console.error('showAddCustomerForm error:', e); }
+};
+window.createNewCustomer = async () => {
+    try { await window.fencePOS?.createNewCustomer(); } catch(e) { console.error('createNewCustomer error:', e); }
+};
+
+// Enhanced time selection functions
+window.selectTimeFromPicker = (timeValue) => {
+    try { window.fencePOS?.selectTimeFromPicker(timeValue); } catch(e) { console.error('selectTimeFromPicker error:', e); }
+};
+window.selectQuickTime = (time) => {
+    try { window.fencePOS?.selectQuickTime(time); } catch(e) { console.error('selectQuickTime error:', e); }
+};
+
+// Setup and utility functions
+window.setupItemAttributes = async () => {
+    try { await window.fencePOS?.setupItemAttributes(); } catch(e) { console.error('setupItemAttributes error:', e); }
+};
+window.loadDynamicOptions = async () => {
+    try { await window.fencePOS?.loadDynamicOptions(); } catch(e) { console.error('loadDynamicOptions error:', e); }
+};
 
 // Initialize POS when page loads
 frappe.ready(() => {
@@ -3349,86 +3848,48 @@ frappe.ready(() => {
         console.log('=== END DEBUG ===');
     };
 });
-
-// Global functions for onclick handlers
-// Navigation and category functions
-window.selectCategory = (category) => {
-    try { window.fencePOS?.selectCategory(category); } catch(e) { console.error('selectCategory error:', e); }
-};
-window.selectStyle = (styleId) => {
-    try { window.fencePOS?.selectStyle(styleId); } catch(e) { console.error('selectStyle error:', e); }
-};
-window.selectHeight = (height) => {
-    try { window.fencePOS?.selectHeight(height); } catch(e) { console.error('selectHeight error:', e); }
-};
-window.selectColor = (color) => {
-    try { window.fencePOS?.selectColor(color); } catch(e) { console.error('selectColor error:', e); }
-};
-window.proceedToComponents = () => {
-    try { window.fencePOS?.proceedToComponents(); } catch(e) { console.error('proceedToComponents error:', e); }
-};
-
-// Order management functions
-window.selectOrderType = (type) => {
-    try { window.fencePOS?.selectOrderType(type); } catch(e) { console.error('selectOrderType error:', e); }
-};
-window.selectFulfillment = (method) => {
-    try { window.fencePOS?.selectFulfillment(method); } catch(e) { console.error('selectFulfillment error:', e); }
-};
-window.selectSchedule = (type) => {
-    try { window.fencePOS?.selectSchedule(type); } catch(e) { console.error('selectSchedule error:', e); }
-};
-window.selectTime = (time) => {
-    try { window.fencePOS?.selectTime(time); } catch(e) { console.error('selectTime error:', e); }
-};
-window.changeMonth = (delta) => {
-    try { window.fencePOS?.changeMonth(delta); } catch(e) { console.error('changeMonth error:', e); }
-};
-
-// Cart and checkout functions
-window.checkout = () => {
-    try { window.fencePOS?.checkout(); } catch(e) { console.error('checkout error:', e); }
-};
-window.updateCartItemQuantity = (itemCode, delta) => {
-    try { window.fencePOS?.updateCartItemQuantity(itemCode, delta); } catch(e) { console.error('updateCartItemQuantity error:', e); }
-};
-window.updateBundleItemQuantity = (bundleItemCode, componentItemCode, delta) => {
-    try { window.fencePOS?.updateBundleItemQuantity(bundleItemCode, componentItemCode, delta); } catch(e) { console.error('updateBundleItemQuantity error:', e); }
-};
-
-// Customer and search functions
-window.openCustomerSearch = () => {
-    try { window.fencePOS?.openCustomerSearch(); } catch(e) { console.error('openCustomerSearch error:', e); }
-};
-window.closeCustomerSearch = () => {
-    try { window.fencePOS?.closeCustomerSearch(); } catch(e) { console.error('closeCustomerSearch error:', e); }
-};
-window.selectCustomer = (customerId, customerName, customerGroup) => {
-    try { window.fencePOS?.selectCustomer(customerId, customerName, customerGroup); } catch(e) { console.error('selectCustomer error:', e); }
-};
-window.clearSearch = () => {
-    try { window.fencePOS?.clearSearch(); } catch(e) { console.error('clearSearch error:', e); }
-};
-
-// Settings functions
-window.switchLanguage = (lang) => {
-    try { window.fencePOS?.switchLanguage(lang); } catch(e) { console.error('switchLanguage error:', e); }
-};
-
-// New customer management functions
-window.showAddCustomerForm = () => {
-    try { window.fencePOS?.showAddCustomerForm(); } catch(e) { console.error('showAddCustomerForm error:', e); }
-};
-window.createNewCustomer = () => {
-    try { window.fencePOS?.createNewCustomer(); } catch(e) { console.error('createNewCustomer error:', e); }
-};
-
-// Enhanced time selection functions
-window.selectTimeFromPicker = (timeValue) => {
-    try { window.fencePOS?.selectTimeFromPicker(timeValue); } catch(e) { console.error('selectTimeFromPicker error:', e); }
-};
-window.selectQuickTime = (time) => {
-    try { window.fencePOS?.selectQuickTime(time); } catch(e) { console.error('selectQuickTime error:', e); }
+window.debugItemAttributes = async () => {
+    try {
+        console.log('🔍 Debugging item attributes...');
+        const response = await frappe.call({
+            method: 'webshop.webshop.pos_api.debug_item_attributes'
+        });
+        
+        if (response.message && response.message.success) {
+            const result = response.message;
+            console.log('=== ITEM ATTRIBUTES DEBUG ===');
+            console.log(`Total items with attributes: ${result.total_items_with_attributes}`);
+            console.log(`Total items without attributes: ${result.total_items_without_attributes}`);
+            console.log('');
+            
+            console.log('📊 ATTRIBUTE COUNTS:');
+            result.attribute_counts.forEach(attr => {
+                console.log(`  ${attr.attribute} = "${attr.attribute_value}": ${attr.sellable_count}/${attr.item_count} items (sellable/total)`);
+            });
+            console.log('');
+            
+            if (result.items_without_attributes.length > 0) {
+                console.log('⚠️ ITEMS WITHOUT ATTRIBUTES (first 20):');
+                result.items_without_attributes.forEach(item => {
+                    console.log(`  ${item.name}: ${item.item_name} (variants: ${item.has_variants}, sales: ${item.is_sales_item}, disabled: ${item.disabled})`);
+                });
+                console.log('');
+            }
+            
+            console.log('📋 SAMPLE ITEMS WITH ATTRIBUTES:');
+            const sampleItems = result.items_with_attributes.slice(0, 10);
+            sampleItems.forEach(item => {
+                console.log(`  ${item.item_code}: ${item.attribute} = "${item.attribute_value}"`);
+            });
+            console.log('=== END DEBUG ===');
+            
+            return result;
+        } else {
+            console.error('Debug failed:', response.message);
+        }
+    } catch(e) { 
+        console.error('debugItemAttributes error:', e); 
+    }
 };
 
 // Generate Quote function

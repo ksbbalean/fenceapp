@@ -1,0 +1,284 @@
+/* CSS for hierarchical material class display in POS */
+
+.material-class-group {
+    margin-bottom: 30px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.material-class-group .group-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 15px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.material-class-group .group-header h3 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.material-class-group .group-header h3:before {
+    content: "🏗️";
+    font-size: 20px;
+}
+
+.group-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+    padding: 20px;
+}
+
+/* Different icons for different material classes */
+.material-class-group[data-class="Gate"] .group-header h3:before { content: "🚪"; }
+.material-class-group[data-class="Fence"] .group-header h3:before { content: "🏗️"; }
+.material-class-group[data-class="Post"] .group-header h3:before { content: "📏"; }
+.material-class-group[data-class="Uchannel"] .group-header h3:before { content: "〈"; }
+.material-class-group[data-class="Cap"] .group-header h3:before { content: "🎩"; }
+.material-class-group[data-class="Rail"] .group-header h3:before { content: "━"; }
+.material-class-group[data-class="Panel"] .group-header h3:before { content: "🪟"; }
+
+.no-products {
+    text-align: center;
+    padding: 60px 20px;
+    color: #6c757d;
+    font-size: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 20px;
+}
+
+/* Enhanced product cards for grouped display */
+.group-items .product-card {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 15px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.group-items .product-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    border-color: #007bff;
+}
+
+.product-card .material-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.product-card .material-type {
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.product-card .material-class {
+    background: #d4edda;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+    color: #155724;
+}
+
+/* Variant attribute display styles */
+.variant-attributes {
+    margin: 8px 0;
+    font-size: 11px;
+    color: #6c757d;
+    line-height: 1.4;
+}
+
+.variant-attributes span {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 10px;
+}
+
+.attr-height {
+    background: #e8f5e8;
+    color: #2e7d32;
+}
+
+.attr-color {
+    background: #fff3e0;
+    color: #f57c00;
+}
+
+.attr-style {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.attr-width {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.attr-post {
+    background: #fce4ec;
+    color: #c2185b;
+}
+
+/* Template/Variant relationship badges */
+.template-info {
+    margin: 8px 0;
+}
+
+.template-badge {
+    background: #e8f5e8;
+    color: #2e7d32;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.variant-badge {
+    background: #fff3e0;
+    color: #f57c00;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+/* Enhanced product card for variants */
+.group-items .product-card[data-is-template="true"] {
+    border-left: 4px solid #2e7d32;
+}
+
+.group-items .product-card[data-is-variant="true"] {
+    border-left: 4px solid #f57c00;
+}
+
+/* Product card content styles */
+.product-card .product-image {
+    width: 100%;
+    height: 120px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.product-card .product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.product-card .product-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.product-card .product-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: #333;
+    line-height: 1.3;
+}
+
+.product-card .product-category {
+    font-size: 14px;
+    color: #666;
+    margin: 0 0 10px 0;
+}
+
+.product-card .product-price {
+    margin-top: auto;
+    margin-bottom: 10px;
+}
+
+.product-card .price {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2e7d32;
+}
+
+.product-card .product-actions {
+    margin-top: auto;
+}
+
+.product-card .add-to-cart-btn {
+    width: 100%;
+    padding: 10px;
+    background: #2e7d32;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.product-card .add-to-cart-btn:hover {
+    background: #1b5e20;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .group-items {
+        grid-template-columns: 1fr;
+        padding: 15px;
+    }
+    
+    .material-class-group .group-header {
+        padding: 12px 15px;
+    }
+    
+    .material-class-group .group-header h3 {
+        font-size: 16px;
+    }
+}
+
+/* Loading state for grouped items */
+.loading-grouped {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.loading-grouped::before {
+    content: "⏳";
+    font-size: 24px;
+    margin-bottom: 10px;
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
