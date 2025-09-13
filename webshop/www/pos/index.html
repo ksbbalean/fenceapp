@@ -34,12 +34,79 @@
         display: flex;
         flex-direction: column;
     }
+    
+    .header-controls {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+    
+    .clear-cart-btn {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    
+    .clear-cart-btn:hover {
+        background: #c82333;
+        transform: translateY(-1px);
+    }
+    
+    .clear-cart-btn:active {
+        transform: translateY(0);
+    }
+    
+    .language-toggle {
+        display: flex;
+        gap: 5px;
+    }
+    
+    .language-btn {
+        background: #6c757d;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .language-btn.active {
+        background: #007bff;
+    }
+    
+    .language-btn:hover {
+        background: #5a6268;
+    }
+    
+    .language-btn.active:hover {
+        background: #0056b3;
+    }
+    
+    .cart-delete-btn:hover {
+        background: #e9ecef !important;
+        color: #dc3545 !important;
+        border-color: #dc3545 !important;
+        transform: translateY(-1px);
+    }
+    
+    .cart-delete-btn:active {
+        transform: translateY(0);
+    }
 </style>
 {% endblock %}
 
-{% block script %}
-<script type="text/javascript" src="/pos/index.js"></script>
-{% endblock %}
+
 
 {% block page_content %}
 <div class="pos-container">
@@ -48,10 +115,26 @@
         <!-- Popular Items Button -->
         <div class="popular-section">
             <div class="popular-btn" onclick="selectPopular()" id="popularBtn">
-                <div class="popular-icon">⭐</div>
+                <div class="popular-icon">★</div>
                 <div class="popular-name">{{ _("Popular Items") }}</div>
             </div>
         </div>
+        
+    <!-- Bundles Button -->
+    <div class="bundles-section">
+        <div class="bundles-btn" onclick="selectBundles()" id="bundlesBtn">
+            <div class="bundles-icon">📦</div>
+            <div class="bundles-name">{{ _("Bundles") }}</div>
+        </div>
+    </div>
+    
+    <!-- Templates Button -->
+    <div class="templates-section">
+        <div class="templates-btn" onclick="selectTemplates()" id="templatesBtn">
+            <div class="templates-icon">📋</div>
+            <div class="templates-name">{{ _("Templates") }}</div>
+        </div>
+    </div>
         
         <div class="sidebar-title">{{ _("Material Type") }}</div>
         
@@ -59,28 +142,28 @@
         <div class="fence-type-btn" data-category="{{ material.name }}" onclick="selectCategory('{{ material.name|e }}')">
             <div class="fence-type-image">
                 {% if material.image %}
-                    <img src="{{ material.image }}" alt="{{ material.material_type_name }}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.innerHTML='🏗️';">
+                    <img src="{{ material.image }}" alt="{{ material.material_type_name }}" style="width: 100%; height: 100%; object-fit: cover;" 
+                         onerror="this.style.display='none'; this.parentNode.innerHTML=getCategoryFallbackIcon('{{ material.material_type_name }}');">
                 {% else %}
-                    🏗️
+                    {% set name_lower = material.material_type_name.lower() %}
+                    {% if 'panel' in name_lower %}🪟
+                    {% elif 'rail' in name_lower %}━
+                    {% elif 'post' in name_lower %}📏
+                    {% elif 'gate' in name_lower %}🚪
+                    {% elif 'hardware' in name_lower %}🔧
+                    {% elif 'cap' in name_lower %}🎩
+                    {% else %}{{ material.material_type_name[:1] }}
+                    {% endif %}
                 {% endif %}
             </div>
             <div class="fence-type-name">{{ _(material.material_type_name) }}</div>
         </div>
         {% endfor %}
         
-        <!-- Default material types if none exist -->
+        <!-- No default material types - all from doctype -->
         {% if not material_types %}
-        <div class="fence-type-btn active" data-category="vinyl" onclick="selectCategory('vinyl')">
-            <div class="fence-type-image">🏠</div>
-            <div class="fence-type-name">{{ _("Vinyl") }}</div>
-        </div>
-        <div class="fence-type-btn" data-category="aluminum" onclick="selectCategory('aluminum')">
-            <div class="fence-type-image">🏗️</div>
-            <div class="fence-type-name">{{ _("Aluminum") }}</div>
-        </div>
-        <div class="fence-type-btn" data-category="wood" onclick="selectCategory('wood')">
-            <div class="fence-type-image">🌲</div>
-            <div class="fence-type-name">{{ _("Wood") }}</div>
+        <div class="no-material-types">
+            <p>No material types configured. Please add Material Types in the system.</p>
         </div>
         {% endif %}
     </div>
@@ -91,6 +174,9 @@
         <div class="pos-header">
             <div class="pos-title">{{ _("H&J Fence Supply POS") }}</div>
             <div class="header-controls">
+                <button class="clear-cart-btn" onclick="window.fencePOS.clearCart()" title="{{ _('Clear Cart') }}">
+                    🗑️ {{ _("Clear Cart") }}
+                </button>
                 <div class="language-toggle">
                     <button class="language-btn active" onclick="window.fencePOS.switchLanguage('en')">EN</button>
                     <button class="language-btn" onclick="window.fencePOS.switchLanguage('es')">ES</button>
@@ -102,10 +188,14 @@
         <div class="customer-section">
             <div class="customer-info">
                 <div class="customer-name" id="customerName">{{ _("Walk-in Customer") }}</div>
+                <div class="price-list-selector">
+                    <select id="priceListSelector" onchange="changePriceList(this.value)" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; background: white; font-size: 12px;">
+                        <!-- Options will be populated dynamically from actual price lists -->
+                    </select>
+                </div>
                 <div class="customer-type" id="customerType">{{ _("Individual") }}</div>
             </div>
             <div>
-                <div class="price-list-name" id="priceListName">{{ _("Standard Selling") }}</div>
                 <button class="customer-lookup-btn" onclick="openCustomerSearch()">{{ _("Lookup Customer") }}</button>
             </div>
         </div>
@@ -133,9 +223,9 @@
                 </div>
             </div>
             
-            <!-- Height and Color Selection -->
+            <!-- Height, Color and Rail Type Selection -->
             <div id="optionsView" style="display: none;">
-                <div class="section-title" id="optionsTitle">{{ _("Filter by Height & Color (Optional)") }}</div>
+                <div class="section-title" id="optionsTitle">{{ _("Filter by Height, Color & Rail Type (Optional)") }}</div>
                 <div style="margin-bottom: 15px; text-align: center; color: #666; font-size: 14px;">
                     {{ _("Leave blank to see all products, or select filters to narrow results") }}
                 </div>
@@ -151,6 +241,35 @@
                         <!-- Colors will be populated dynamically -->
                     </div>
                 </div>
+                <div style="margin-bottom: 25px;">
+                    <div class="component-header" id="railTypeHeader">{{ _("Rail Type Options") }} <button onclick="window.fencePOS.clearRailType()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
+                    <div class="option-grid" id="railTypeGrid">
+                        <!-- Rail types will be populated dynamically -->
+                    </div>
+                </div>
+                
+                <!-- New Attribute Filters -->
+                <div style="margin-bottom: 25px;" id="latticeTypeSection">
+                    <div class="component-header">{{ _("Lattice Type Options") }} <button onclick="window.fencePOS.clearLatticeType()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
+                    <div class="option-grid" id="latticeTypeGrid">
+                        <!-- Lattice types will be populated dynamically -->
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 25px;" id="orientationSection">
+                    <div class="component-header">{{ _("Orientation Options") }} <button onclick="window.fencePOS.clearOrientation()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
+                    <div class="option-grid" id="orientationGrid">
+                        <!-- Orientations will be populated dynamically -->
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 25px;" id="picketTypeSection">
+                    <div class="component-header">{{ _("Picket Type Options") }} <button onclick="window.fencePOS.clearPicketType()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">{{ _("Clear") }}</button></div>
+                    <div class="option-grid" id="picketTypeGrid">
+                        <!-- Picket types will be populated dynamically -->
+                    </div>
+                </div>
+
                 <button class="checkout-btn" onclick="window.fencePOS.proceedToComponents()" style="width: 200px; margin: 20px auto; display: block;">
                     {{ _("Continue to Components") }}
                 </button>
@@ -161,6 +280,65 @@
                 <div class="section-title" id="componentTitle">{{ _("Select Components") }}</div>
                 <div id="componentsContainer">
                     <!-- Components will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Popular Items View -->
+            <div id="popularView" style="display: none;">
+                <div class="section-title">{{ _("Popular Items") }}</div>
+                <div id="popularContent">
+                    <!-- Popular items will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Bundles Material Type View -->
+            <div id="bundlesMaterialView" style="display: none;">
+                <div class="section-title">{{ _("Select Material Type for Bundles") }}</div>
+                <div id="bundlesMaterialGrid">
+                    <!-- Material types for bundles will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Bundles View -->
+            <div id="bundlesView" style="display: none;">
+                <div class="section-title">{{ _("Product Bundles") }}</div>
+                <div id="bundlesContent">
+                    <!-- Bundle content will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Templates View -->
+            <div id="templatesView" style="display: none;">
+                <div class="section-title">{{ _("Quotation Templates") }}</div>
+                <div class="templates-controls">
+                    <div class="template-actions">
+                        <button class="btn btn-primary" onclick="showSaveTemplateModal()">
+                            <i class="fa fa-save"></i> {{ _("Save Current Cart as Template") }}
+                        </button>
+                        <button class="btn btn-secondary" onclick="refreshTemplates()">
+                            <i class="fa fa-refresh"></i> {{ _("Refresh") }}
+                        </button>
+                    </div>
+                    <div class="template-filters">
+                        <select id="templateCategoryFilter" onchange="filterTemplates()">
+                            <option value="all">{{ _("All Categories") }}</option>
+                            <option value="Standard Fence">{{ _("Standard Fence") }}</option>
+                            <option value="Gate Package">{{ _("Gate Package") }}</option>
+                            <option value="Hardware Set">{{ _("Hardware Set") }}</option>
+                            <option value="Custom Package">{{ _("Custom Package") }}</option>
+                            <option value="Other">{{ _("Other") }}</option>
+                        </select>
+                        <select id="templateCustomerTypeFilter" onchange="filterTemplates()">
+                            <option value="all">{{ _("All Customer Types") }}</option>
+                            <option value="Contractor">{{ _("Contractor") }}</option>
+                            <option value="Homeowner">{{ _("Homeowner") }}</option>
+                            <option value="Both">{{ _("Both") }}</option>
+                        </select>
+                        <input type="text" id="templateSearchInput" placeholder="{{ _('Search templates...') }}" onkeyup="searchTemplates()">
+                    </div>
+                </div>
+                <div id="templatesContent" class="templates-content">
+                    <!-- Template content will be loaded here -->
                 </div>
             </div>
         </div>
@@ -267,4 +445,77 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+<!-- Save Template Modal -->
+<div id="saveTemplateModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>{{ _("Save Cart as Template") }}</h3>
+            <span class="close" onclick="closeSaveTemplateModal()">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="saveTemplateForm">
+                <div class="form-group">
+                    <label for="templateName">{{ _("Template Name") }} *</label>
+                    <input type="text" id="templateName" name="templateName" required placeholder="{{ _('Enter template name...') }}">
+                </div>
+                <div class="form-group">
+                    <label for="templateDescription">{{ _("Description") }}</label>
+                    <textarea id="templateDescription" name="templateDescription" rows="3" placeholder="{{ _('Enter template description...') }}"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="templateCategory">{{ _("Category") }}</label>
+                    <select id="templateCategory" name="templateCategory">
+                        <option value="Standard Fence">{{ _("Standard Fence") }}</option>
+                        <option value="Gate Package">{{ _("Gate Package") }}</option>
+                        <option value="Hardware Set">{{ _("Hardware Set") }}</option>
+                        <option value="Custom Package">{{ _("Custom Package") }}</option>
+                        <option value="Other">{{ _("Other") }}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="templateCustomerType">{{ _("Customer Type") }}</label>
+                    <select id="templateCustomerType" name="templateCustomerType">
+                        <option value="Both">{{ _("Both") }}</option>
+                        <option value="Contractor">{{ _("Contractor") }}</option>
+                        <option value="Homeowner">{{ _("Homeowner") }}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="templatePriceList">{{ _("Default Price List") }}</label>
+                    <select id="templatePriceList" name="templatePriceList">
+                        <option value="">{{ _("Use Current Price List") }}</option>
+                        <option value="Contractor">{{ _("Contractor") }}</option>
+                        <option value="Homeowner">{{ _("Homeowner") }}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="templateNotes">{{ _("Template Notes") }}</label>
+                    <textarea id="templateNotes" name="templateNotes" rows="2" placeholder="{{ _('Additional notes for this template...') }}"></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeSaveTemplateModal()">{{ _("Cancel") }}</button>
+            <button type="button" class="btn btn-primary" onclick="saveTemplate()">{{ _("Save Template") }}</button>
+        </div>
+    </div>
+</div>
+
+{% block script %}
+<script>
+// Fallback icon function for category buttons
+function getCategoryFallbackIcon(materialTypeName) {
+    const nameLower = materialTypeName.toLowerCase();
+    if (nameLower.includes('panel')) return '🪟';
+    if (nameLower.includes('rail')) return '━';
+    if (nameLower.includes('post')) return '📏';
+    if (nameLower.includes('gate')) return '🚪';
+    if (nameLower.includes('hardware')) return '🔧';
+    if (nameLower.includes('cap')) return '🎩';
+    return materialTypeName.charAt(0);
+}
+</script>
+<script type="text/javascript" src="/pos/index.js"></script>
 {% endblock %} 

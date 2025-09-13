@@ -51,8 +51,10 @@ def get_attribute_name_mapping():
         frappe.log_error(f"Error getting attribute mapping: {str(e)}")
         return {}
 
+
+
 @frappe.whitelist()
-def get_fence_items_for_pos(category=None, height=None, color=None, style=None, price_list=None):
+def get_fence_items_for_pos(category=None, height=None, color=None, style=None, railType=None, price_list=None):
     """Get fence items for POS using SIMPLE filtering: custom_material_type -> custom_style -> sort by custom_material_class"""
     
     try:
@@ -62,6 +64,10 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
             "i.is_sales_item = 1",
             "(i.has_variants = 0 OR i.variant_of IS NOT NULL)"
         ]
+        
+        # Include Hardware and Cap items in the main query
+        # These should be filtered by material type and color, but not by style/height/rail type
+        include_hardware_caps = True
         query_params = []
         
         # PRIMARY FILTER: custom_material_type
@@ -70,23 +76,65 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
             query_params.append(category)
             frappe.logger().info(f"POS API Debug - Primary filter (custom_material_type): '{category}'")
         
-        # SECONDARY FILTER: custom_style
+        # SECONDARY FILTER: custom_style (but exclude Hardware and Caps from style filtering)
         if style:
-            where_conditions.append("i.custom_style = %s")
+            where_conditions.append("(i.custom_style = %s OR i.custom_material_class IN ('Hardware', 'Cap'))")
             query_params.append(style)
-            frappe.logger().info(f"POS API Debug - Secondary filter (custom_style): '{style}'")
+            frappe.logger().info(f"POS API Debug - Secondary filter (custom_style): '{style}' (Hardware/Caps exempted)")
         
-        # HEIGHT FILTER: Text matching in item name/code
+        # HEIGHT FILTER: Use Item Attribute system (exclude Hardware and Caps)
         if height:
-            height_pattern = height.replace("'", "").replace('"', '')
-            where_conditions.append("(i.item_name LIKE %s OR i.item_code LIKE %s OR i.name LIKE %s)")
-            query_params.extend([f'%{height_pattern}%', f'%{height_pattern}%', f'%{height_pattern}%'])
-            frappe.logger().info(f"POS API Debug - Height filter: '{height_pattern}'")
+            where_conditions.append("""
+                (i.custom_material_class NOT IN ('Hardware', 'Cap') AND EXISTS (
+                    SELECT 1 FROM `tabItem Variant Attribute` iva 
+                    WHERE iva.parent = i.name 
+                    AND iva.attribute = 'Fence Height' 
+                    AND iva.attribute_value = %s
+                )) OR i.custom_material_class IN ('Hardware', 'Cap')
+            """)
+            query_params.append(height)
+            frappe.logger().info(f"POS API Debug - Height filter (attribute): '{height}' (Hardware/Caps exempted)")
+        
+        # COLOR FILTER: Use Item Attribute system (include Hardware and Caps)
+        if color:
+            # Map color names to abbreviations
+            color_mapping = {
+                'White': 'WHI',
+                'Khaki': 'Kha', 
+                'Tan': 'Tan',
+                'Black': 'BLA',
+                'Gray': 'Gry'
+            }
+            color_abbreviation = color_mapping.get(color, color)
+            
+            where_conditions.append("""
+                EXISTS (
+                    SELECT 1 FROM `tabItem Variant Attribute` iva 
+                    WHERE iva.parent = i.name 
+                    AND iva.attribute = 'Color' 
+                    AND iva.attribute_value = %s
+                )
+            """)
+            query_params.append(color_abbreviation)
+            frappe.logger().info(f"POS API Debug - Color filter (attribute): '{color}' -> '{color_abbreviation}'")
+        
+        # RAIL TYPE FILTER: Use Item Attribute system (exclude Hardware and Caps)
+        if railType:
+            where_conditions.append("""
+                (i.custom_material_class NOT IN ('Hardware', 'Cap') AND EXISTS (
+                    SELECT 1 FROM `tabItem Variant Attribute` iva 
+                    WHERE iva.parent = i.name 
+                    AND iva.attribute = 'Rail Type' 
+                    AND iva.attribute_value = %s
+                )) OR (i.custom_material_class IN ('Hardware', 'Cap') AND i.custom_material_type = %s)
+            """)
+            query_params.extend([railType, category])
+            frappe.logger().info(f"POS API Debug - Rail Type filter (attribute): '{railType}' (Hardware/Caps exempted but must match material type)")
         
         # Build the complete query
         where_clause = " AND ".join(where_conditions)
         
-        # SIMPLE QUERY with SORTING by custom_material_class
+        # ENHANCED QUERY with ATTRIBUTES for sub-segmentation
         items_query = f"""
             SELECT DISTINCT
                 i.name,
@@ -104,15 +152,26 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
                 wi.website_image,
                 wi.route,
                 wi.short_description,
-                wi.published
+                wi.published,
+                -- Add attribute data for sub-segmentation
+                GROUP_CONCAT(
+                    CONCAT(iva.attribute, ':', iva.attribute_value) 
+                    ORDER BY iva.attribute 
+                    SEPARATOR '|'
+                ) as attributes
             FROM `tabItem` i
             LEFT JOIN `tabWebsite Item` wi ON wi.item_code = i.name
+            LEFT JOIN `tabItem Variant Attribute` iva ON iva.parent = i.name
             WHERE {where_clause}
+            GROUP BY i.name, i.item_name, i.item_code, i.item_group, i.stock_uom, 
+                     i.image, i.has_variants, i.variant_of, i.custom_material_type, 
+                     i.custom_material_class, i.custom_style, wi.web_item_name, 
+                     wi.website_image, wi.route, wi.short_description, wi.published
             ORDER BY i.custom_material_class, i.item_name
             LIMIT 100
         """
         
-        frappe.logger().info(f"POS API Debug - Simple Query: {items_query}")
+        frappe.logger().info(f"POS API Debug - Complete WHERE clause: {where_clause}")
         frappe.logger().info(f"POS API Debug - Query params: {query_params}")
         
         items = frappe.db.sql(items_query, query_params, as_dict=True)
@@ -124,6 +183,14 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
         # Format items for POS display
         formatted_items = []
         for item in items:
+            # Parse attributes string into object
+            attributes = {}
+            if item.attributes:
+                for attr_pair in item.attributes.split('|'):
+                    if ':' in attr_pair:
+                        attr_name, attr_value = attr_pair.split(':', 1)
+                        attributes[attr_name] = attr_value
+            
             formatted_item = {
                 "name": item.name,
                 "item_name": item.item_name or item.name,
@@ -139,7 +206,8 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
                 "custom_material_type": item.custom_material_type,
                 "custom_material_class": item.custom_material_class,
                 "custom_style": item.custom_style,
-                "web_item_name": item.web_item_name or item.item_name
+                "web_item_name": item.web_item_name or item.item_name,
+                "attributes": attributes
             }
             
             # Add pricing for specific price list
@@ -1499,14 +1567,16 @@ def get_dynamic_fence_attributes():
                 "item_count": attr.item_count
             })
         
-        # MAINTENANCE FREE: Auto-detect which attributes to use for height/color selection
+        # MAINTENANCE FREE: Auto-detect which attributes to use for height/color/rail type selection
         # Based on common naming patterns - completely scalable
         height_keywords = ['height', 'fence height', 'post height']
         color_keywords = ['color', 'fence color']
+        rail_type_keywords = ['rail type', 'ranch rail type', 'rail style']
         
-        # Find the best height and color attributes dynamically
+        # Find the best height, color, and rail type attributes dynamically
         height_attribute = None
         color_attribute = None
+        rail_type_attribute = None
         
         for attr_name in organized_attributes.keys():
             attr_lower = attr_name.lower()
@@ -1516,12 +1586,16 @@ def get_dynamic_fence_attributes():
             # Find color attribute  
             if not color_attribute and any(keyword in attr_lower for keyword in color_keywords):
                 color_attribute = attr_name
+            # Find rail type attribute
+            if not rail_type_attribute and any(keyword in attr_lower for keyword in rail_type_keywords):
+                rail_type_attribute = attr_name
         
         return {
             "success": True,
             "attributes": organized_attributes,
             "height_attribute": height_attribute,  # Which attribute to use for height selection
             "color_attribute": color_attribute,    # Which attribute to use for color selection
+            "rail_type_attribute": rail_type_attribute,  # Which attribute to use for rail type selection
             "available_attributes": list(organized_attributes.keys()),  # All available attributes
             "total_attribute_types": len(organized_attributes),
             "total_items_with_attributes": sum(attr.item_count for attr in attributes)
@@ -1707,6 +1781,208 @@ def get_custom_style_distribution():
         
     except Exception as e:
         frappe.log_error(f"Error getting custom_style distribution: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@frappe.whitelist()
+def get_styles_for_material_type(material_type=None):
+    """
+    Get styles from Style doctype, optionally filtered by material type.
+    This replaces the hard-coded styles in POS JavaScript.
+    """
+    try:
+        filters = {}
+        
+        # Filter by material type if provided
+        if material_type:
+            # Map common material type variations to standard names
+            material_type_mapping = {
+                'vinyl': 'Vinyl',
+                'aluminum': 'Aluminum', 
+                'wood': 'Wood',
+                'pressure-treated': 'Pressure Treated',
+                'chain-link': 'Chain Link'
+            }
+            
+            # Use mapped name or original value
+            mapped_material_type = material_type_mapping.get(material_type.lower(), material_type)
+            filters['material_type'] = mapped_material_type
+        
+        # Get styles from Style doctype
+        styles = frappe.get_all('Style', 
+            filters=filters,
+            fields=['name as id', 'style as name', 'material_type'],
+            order_by='style'
+        )
+        
+        # No fallback descriptions - use only what's in doctype
+        
+        frappe.logger().info(f"Found {len(styles)} styles for material type: {material_type}")
+        
+        return {
+            "success": True,
+            "styles": styles,
+            "material_type": material_type
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error getting styles for material type {material_type}: {str(e)}")
+        
+        # No fallback styles - return empty
+        return {
+            "success": True,
+            "styles": [],
+            "material_type": material_type,
+            "message": "No styles found in Style doctype"
+        }
+
+
+
+
+
+@frappe.whitelist()
+def update_item_custom_style_field():
+    """
+    Update Item custom_style field to be a Link field pointing to Style doctype.
+    This ensures data integrity and provides dropdown selection.
+    """
+    try:
+        # Check if custom_style custom field exists
+        custom_field_name = frappe.db.exists("Custom Field", {
+            "dt": "Item", 
+            "fieldname": "custom_style"
+        })
+        
+        if not custom_field_name:
+            print("custom_style field does not exist. Creating it as Link field...")
+            
+            # Create new Link field
+            custom_field = frappe.get_doc({
+                "doctype": "Custom Field",
+                "dt": "Item",
+                "fieldname": "custom_style",
+                "fieldtype": "Link",
+                "options": "Style",
+                "label": "Style",
+                "description": "Fence style for this item",
+                "insert_after": "custom_material_type",
+                "permlevel": 0
+            })
+            custom_field.insert(ignore_permissions=True)
+            frappe.db.commit()
+            
+            return {
+                "success": True,
+                "message": "Created custom_style field as Link field to Style doctype",
+                "action": "created"
+            }
+        else:
+            # Get existing field details
+            existing_field = frappe.get_doc("Custom Field", custom_field_name)
+            
+            if existing_field.fieldtype == "Link" and existing_field.options == "Style":
+                return {
+                    "success": True,
+                    "message": "custom_style field is already properly configured as Link to Style",
+                    "action": "no_change_needed"
+                }
+            else:
+                # Update existing field to Link type
+                existing_field.fieldtype = "Link"
+                existing_field.options = "Style"
+                existing_field.save(ignore_permissions=True)
+                frappe.db.commit()
+                
+                return {
+                    "success": True,
+                    "message": f"Updated custom_style field from {existing_field.fieldtype} to Link field pointing to Style doctype",
+                    "action": "updated",
+                    "previous_type": existing_field.fieldtype
+                }
+                
+    except Exception as e:
+        frappe.log_error(f"Error updating custom_style field: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@frappe.whitelist()
+def migrate_existing_style_data():
+    """
+    Migrate existing custom_style data to use Style doctype names.
+    This handles data migration when switching from Data to Link field.
+    """
+    try:
+        # Get all items with custom_style values
+        items_with_styles = frappe.db.sql("""
+            SELECT name, custom_style, custom_material_type
+            FROM `tabItem`
+            WHERE custom_style IS NOT NULL 
+                AND custom_style != ''
+                AND disabled = 0
+        """, as_dict=True)
+        
+        updated_count = 0
+        error_count = 0
+        mapping_log = []
+        
+        for item in items_with_styles:
+            try:
+                # Try to find matching Style record
+                style_filter = {"style": item.custom_style}
+                
+                # Add material type filter if available
+                if item.custom_material_type:
+                    style_filter["material_type"] = item.custom_material_type
+                
+                # Find Style record
+                style_record = frappe.db.get_value("Style", style_filter, "name")
+                
+                if style_record:
+                    # Update item to use Style record name
+                    frappe.db.set_value("Item", item.name, "custom_style", style_record)
+                    updated_count += 1
+                    mapping_log.append({
+                        "item": item.name,
+                        "old_style": item.custom_style,
+                        "new_style": style_record,
+                        "material_type": item.custom_material_type
+                    })
+                else:
+                    # Style not found - log for manual review
+                    error_count += 1
+                    mapping_log.append({
+                        "item": item.name,
+                        "old_style": item.custom_style,
+                        "new_style": None,
+                        "material_type": item.custom_material_type,
+                        "error": "Style record not found"
+                    })
+                    
+            except Exception as e:
+                error_count += 1
+                mapping_log.append({
+                    "item": item.name,
+                    "old_style": item.custom_style,
+                    "error": str(e)
+                })
+        
+        frappe.db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Migrated {updated_count} items, {error_count} errors",
+            "updated_count": updated_count,
+            "error_count": error_count,
+            "total_items": len(items_with_styles),
+            "mapping_log": mapping_log[:20]  # Show first 20 for review
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error migrating style data: {str(e)}")
         return {
             "success": False,
             "error": str(e)

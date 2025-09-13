@@ -404,11 +404,11 @@ def decorate_quotation_doc(doc):
 				d.thumbnail = variant_data.image
 				fields = fields[2:]
 
-		d.update(
-			frappe.db.get_value(
-				"Website Item", {"item_code": item_code}, fields, as_dict=True
-			)
+		website_item_data = frappe.db.get_value(
+			"Website Item", {"item_code": item_code}, fields, as_dict=True
 		)
+		if website_item_data:
+			d.update(website_item_data)
 
 		website_warehouse = frappe.get_cached_value(
 			"Website Item", {"item_code": item_code}, "website_warehouse"

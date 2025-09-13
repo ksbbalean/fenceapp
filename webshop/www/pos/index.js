@@ -10,9 +10,15 @@ class FencePOS {
         this.selectedStyle = null;
         this.selectedHeight = null;
         this.selectedColor = null;
-        this.currentPriceList = 'Standard Selling';
+        this.selectedRailType = null;
+        this.selectedLatticeType = null;
+        this.selectedOrientation = null;
+        this.selectedPicketType = null;
+        this.currentPriceList = null; // Will be set when user selects a price list
         this.selectedCustomer = null;
         this.searchTerm = '';
+        this.isBundlesMode = false;
+        this.isTemplatesMode = false;
         
         // Order options state
         this.orderType = 'quote';
@@ -26,12 +32,99 @@ class FencePOS {
         this.productCache = new Map();
         this.customerCache = new Map();
         
+        // Simple style-to-filters mapping as requested
+        this.styleFilters = {
+            'Solid': ['Height', 'Color', 'Rail Type'],
+            'Lattice': ['Height', 'Color', 'Rail Type', 'Lattice Type'], // Default for mixed classes
+            'Open Spindle Top': ['Height', 'Color', 'Rail Type', 'Orientation'],
+            'Closed Spindle Top': ['Height', 'Color', 'Rail Type', 'Orientation'],
+            '3"  Open Picket': ['Height', 'Color', 'Orientation'],
+            '1.5" Open Picket': ['Height', 'Color', 'Orientation'],
+            'Picket': ['Height', 'Color', 'Picket Type'],
+            'Ranch Rail': ['Height', 'Color']
+        };
+        
+        // Special case: Lattice style has class-specific filters
+        this.latticeClassFilters = {
+            'Panel': ['Height', 'Color', 'Lattice Type', 'Rail Type'],
+            'Panels': ['Height', 'Color', 'Lattice Type', 'Rail Type'],
+            'Gate': ['Height', 'Color'],
+            'Gates': ['Height', 'Color'],
+            'Post': ['Height', 'Color', 'Rail Type'],
+            'Posts': ['Height', 'Color', 'Rail Type']
+        };
+        
         // Initialize
         this.init();
     }
     
+    sortCategoriesByPriority(categories) {
+        // Define the exact priority order - panels, rail, posts, gates, hardware, caps
+        const priorityOrder = {
+            'Panel': 1, 'Panels': 1,
+            'Rail': 2, 'Rails': 2,
+            'Post': 3, 'Posts': 3, 
+            'Gate': 4, 'Gates': 4,
+            'Hardware': 5,
+            'Cap': 6, 'Caps': 6
+        };
+        
+        const getPriority = (category) => {
+            const name = category.name || '';
+            const materialTypeName = category.material_type_name || '';
+            
+            // Check exact matches
+            if (priorityOrder[name] !== undefined) {
+                return priorityOrder[name];
+            }
+            if (priorityOrder[materialTypeName] !== undefined) {
+                return priorityOrder[materialTypeName];
+            }
+            
+            // Keep original order for unmatched items
+            return 999;
+        };
+        
+        // Sort by priority, then by name alphabetically
+        return categories.sort((a, b) => {
+            const priorityA = getPriority(a);
+            const priorityB = getPriority(b);
+            
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            
+            return (a.name || '').localeCompare(b.name || '');
+        });
+    }
+    
+    getItemFallbackIcon(itemName, isBundleItem) {
+        if (isBundleItem) {
+            return '📦';
+        }
+        
+        const nameLower = itemName.toLowerCase();
+        
+        // Check for item type based on name patterns
+        if (nameLower.includes('panel')) return '🪟';
+        if (nameLower.includes('rail')) return '━';
+        if (nameLower.includes('post')) return '📏';
+        if (nameLower.includes('gate')) return '🚪';
+        if (nameLower.includes('hardware')) return '🔧';
+        if (nameLower.includes('cap')) return '🎩';
+        if (nameLower.includes('screw') || nameLower.includes('bolt') || nameLower.includes('nut')) return '🔩';
+        if (nameLower.includes('bracket')) return '⚙️';
+        if (nameLower.includes('hinge')) return '🔗';
+        
+        // Default fallback
+        return '📦';
+    }
+    
     async init() {
         console.log('Initializing Fence POS System...');
+        
+        // Clear cart on session start
+        await this.clearCartOnSessionStart();
         
         // Set up event listeners
         this.setupEventListeners();
@@ -39,8 +132,10 @@ class FencePOS {
         // Load initial data
         await this.loadInitialData();
         
-        // Set default category selection
-        this.selectCategory('vinyl');
+        // Set default category selection - use first available category
+        if (this.categories && this.categories.length > 0) {
+            this.selectCategory(this.categories[0].name);
+        }
         
         // Update checkout button
         this.updateCheckoutButton();
@@ -92,9 +187,16 @@ class FencePOS {
                     const itemId = itemCard.dataset.itemId;
                     const itemName = itemCard.dataset.itemName;
                     const price = parseFloat(itemCard.dataset.price);
-                    const delta = e.target.classList.contains('plus-btn') ? 1 : -1;
                     
-                    this.updateItemQuantity(itemId, delta, itemName, price);
+                    // Get current quantity from the input field
+                    const qtyInput = itemCard.querySelector('.item-qty-input');
+                    const currentQty = parseInt(qtyInput.value) || 0;
+                    
+                    // Calculate target quantity (absolute, not delta)
+                    const isPlus = e.target.classList.contains('plus-btn');
+                    const targetQty = isPlus ? currentQty + 1 : Math.max(0, currentQty - 1);
+                    
+                    this.updateItemQuantity(itemId, targetQty, itemName, price);
                 }
             } 
             // Product card quantity input modal
@@ -110,13 +212,24 @@ class FencePOS {
             }
             // Cart item quantity buttons
             else if (e.target.classList.contains('cart-plus-btn') || e.target.classList.contains('cart-minus-btn')) {
+                console.log('🖱️ Cart quantity button clicked');
                 const cartItem = e.target.closest('.cart-item');
+                console.log('📦 Cart item element:', cartItem);
+                
                 if (cartItem) {
                     const itemCode = cartItem.dataset.itemCode;
                     const delta = e.target.classList.contains('cart-plus-btn') ? 1 : -1;
+                    console.log(`🔢 Item code: ${itemCode}, Delta: ${delta}`);
                     
                     this.updateCartItemQuantity(itemCode, delta);
+                } else {
+                    console.error('❌ Could not find cart item element');
                 }
+            }
+            // Cart item delete buttons (handled via onclick attribute)
+            else if (e.target.classList.contains('cart-delete-btn')) {
+                console.log('🗑️ Cart delete button clicked');
+                // Already handled via onclick attribute in HTML
             }
         });
     }
@@ -131,6 +244,9 @@ class FencePOS {
             
             // Load categories (item groups)
             await this.loadCategories();
+            
+            // Set price list dropdown to default Standard Selling
+            this.updatePriceListDropdown();
             
         } catch (error) {
             console.error('Error loading initial data:', error);
@@ -151,9 +267,87 @@ class FencePOS {
             
             this.priceLists = response.message || [];
             console.log('Loaded price lists:', this.priceLists);
+            console.log('🔥 ACTUAL PRICE LIST NAMES:', this.priceLists.map(pl => pl.name));
+            console.log('🔥 PRICE LIST DETAILS:', this.priceLists);
+            
+            // Populate the price list dropdown with real data
+            this.populatePriceListDropdown();
+            this.populateCustomerFormPriceList();
+            
         } catch (error) {
             console.error('Error loading price lists:', error);
             this.priceLists = [{ name: 'Standard Selling', price_list_name: 'Standard Selling', currency: 'USD' }];
+            this.populatePriceListDropdown();
+            this.populateCustomerFormPriceList();
+        }
+    }
+    
+    populatePriceListDropdown() {
+        const priceListSelector = document.getElementById('priceListSelector');
+        if (!priceListSelector) return;
+        
+        // Clear existing options
+        priceListSelector.innerHTML = '';
+        
+        // Add options from actual price lists
+        this.priceLists.forEach(priceList => {
+            const option = document.createElement('option');
+            option.value = priceList.name;
+            option.textContent = priceList.price_list_name || priceList.name;
+            
+            // Select the current price list
+            if (priceList.name === this.currentPriceList) {
+                option.selected = true;
+            }
+            
+            priceListSelector.appendChild(option);
+        });
+        
+        console.log(`✅ Price list dropdown populated with ${this.priceLists.length} options`);
+    }
+    
+    populateCustomerFormPriceList() {
+        const customerFormPriceList = document.getElementById('newCustomerPriceList');
+        if (!customerFormPriceList) return;
+        
+        // Clear existing options
+        customerFormPriceList.innerHTML = '';
+        
+        // Add options from actual price lists
+        this.priceLists.forEach(priceList => {
+            const option = document.createElement('option');
+            option.value = priceList.name;
+            option.textContent = priceList.price_list_name || priceList.name;
+            
+            // Select Standard Selling as default
+            if (priceList.name === 'Standard Selling') {
+                option.selected = true;
+            }
+            
+            customerFormPriceList.appendChild(option);
+        });
+        
+        console.log(`✅ Customer form price list populated with ${this.priceLists.length} options`);
+    }
+    
+    updatePriceListDropdown() {
+        /**
+         * Update the price list dropdown to show the current POS price list
+         * POS defaults to 'Standard Selling' and only changes when user explicitly changes it
+         */
+        try {
+            console.log(`🏷️ Setting price list dropdown to: ${this.currentPriceList}`);
+            
+            const priceListSelector = document.getElementById('priceListSelector');
+            if (priceListSelector) {
+                priceListSelector.value = this.currentPriceList;
+                console.log(`✅ Price list dropdown updated to: ${this.currentPriceList}`);
+            } else {
+                console.log('⚠️ Price list selector not found, will be set when rendered');
+            }
+            
+        } catch (error) {
+            console.error('Error updating price list dropdown:', error);
         }
     }
     
@@ -199,9 +393,10 @@ class FencePOS {
                 const materialTypes = [...new Set(items.map(item => item.custom_material_type).filter(Boolean))];
                 this.categories = materialTypes.map(type => ({
                     name: type,
-                    material_type_name: type,
-                    icon: '🏗️'
+                    material_type_name: type
                 }));
+                // Apply custom sorting
+                this.categories = this.sortCategoriesByPriority(this.categories);
                 console.log('Loaded material types from custom_material_type:', this.categories);
             } else {
                 // Fallback to Item Groups
@@ -223,6 +418,8 @@ class FencePOS {
                     item_group_name: group.item_group_name,
                     icon: '📦'
                 }));
+                // Apply custom sorting
+                this.categories = this.sortCategoriesByPriority(this.categories);
                 console.log('Loaded categories from Item Groups:', this.categories);
             }
             
@@ -239,18 +436,12 @@ class FencePOS {
         const categoryGrid = document.getElementById('categoryGrid');
         if (!categoryGrid) return;
         
-        // Default material types if none loaded
-        const defaultCategories = [
-            { name: 'vinyl', material_type_name: 'Vinyl', icon: '🏠' },
-            { name: 'aluminum', material_type_name: 'Aluminum', icon: '🏗️' },
-            { name: 'wood', material_type_name: 'Wood', icon: '🌲' }
-        ];
-        
-        const categoriesToShow = this.categories.length > 0 ? this.categories.slice(0, 6) : defaultCategories;
+        // Use only loaded categories, no defaults
+        const categoriesToShow = this.categories.slice(0, 6);
         
         categoryGrid.innerHTML = categoriesToShow.map(category => `
             <div class="category-button" data-category="${category.name}" onclick="window.fencePOS.selectCategory('${category.name}')">
-                <div class="category-icon">${category.icon || '🏗️'}</div>
+                <div class="category-icon">${category.icon || ''}</div>
                 <div class="category-name">${category.material_type_name || category.item_group_name}</div>
             </div>
         `).join('');
@@ -262,6 +453,7 @@ class FencePOS {
         this.selectedStyle = null;
         this.selectedHeight = null;
         this.selectedColor = null;
+        this.selectedRailType = null;
         this.isPopularMode = false; // Reset popular mode when selecting category
         
         // Update sidebar button states
@@ -283,6 +475,7 @@ class FencePOS {
         this.selectedStyle = null;
         this.selectedHeight = null;
         this.selectedColor = null;
+        this.selectedRailType = null;
         
         // Update button states
         document.querySelectorAll('.fence-type-btn').forEach(btn => btn.classList.remove('active'));
@@ -290,6 +483,25 @@ class FencePOS {
         
         // Show material type filter for popular items
         await this.showPopularMaterialTypeView();
+    }
+    
+    async selectBundles() {
+        console.log('Selecting Bundles');
+        this.isBundlesMode = true;
+        this.isPopularMode = false;
+        this.selectedCategory = null;
+        this.selectedStyle = null;
+        this.selectedHeight = null;
+        this.selectedColor = null;
+        this.selectedRailType = null;
+        
+        // Update button states
+        document.querySelectorAll('.fence-type-btn').forEach(btn => btn.classList.remove('active'));
+        document.getElementById('bundlesBtn').classList.add('active');
+        document.getElementById('popularBtn').classList.remove('active');
+        
+        // Show material type filter for bundles
+        await this.showBundlesMaterialTypeView();
     }
     
     async showPopularMaterialTypeView() {
@@ -310,17 +522,66 @@ class FencePOS {
         const styleGrid = document.getElementById('styleGrid');
         if (!styleGrid) return;
         
-        // Create material type options for popular items
+        // Create material type options for popular items from loaded categories
         const materialTypes = [
-            { id: 'all', name: 'All Popular Items', icon: '⭐' },
-            { id: 'Vinyl', name: 'Popular Vinyl', icon: '🏠' },
-            { id: 'Aluminum', name: 'Popular Aluminum', icon: '🔧' },
-            { id: 'Wood', name: 'Popular Wood', icon: '🌲' }
+            { id: 'all', name: 'All Popular Items' }
         ];
+        
+        // Add dynamic material types from loaded categories
+        if (this.categories && this.categories.length > 0) {
+            this.categories.forEach(category => {
+                materialTypes.push({
+                    id: category.name,
+                    name: `Popular ${category.material_type_name || category.name}`
+                });
+            });
+        }
         
         styleGrid.innerHTML = materialTypes.map(material => `
             <div class="style-option" onclick="selectPopularMaterial('${material.id}')">
-                <div class="style-icon">${material.icon}</div>
+                <div class="style-icon">${material.icon || ''}</div>
+                <div class="style-name">${material.name}</div>
+            </div>
+        `).join('');
+    }
+    
+    async showBundlesMaterialTypeView() {
+        this.currentView = 'bundles-material';
+        
+        // Hide other views
+        document.getElementById('categoryView').style.display = 'none';
+        document.getElementById('styleView').style.display = 'block'; // Reuse style view for layout
+        document.getElementById('optionsView').style.display = 'none';
+        document.getElementById('componentView').style.display = 'none';
+        
+        // Update the style view title and content for bundles material selection
+        const styleTitle = document.querySelector('#styleView .view-title');
+        if (styleTitle) {
+            styleTitle.textContent = 'Bundles - Select Material Type';
+        }
+        
+        const styleGrid = document.getElementById('styleGrid');
+        if (!styleGrid) return;
+        
+        // Create material type options for bundles from loaded categories
+        const materialTypes = [
+            { id: 'all', name: 'All Bundles', icon: '📦' }
+        ];
+        
+        // Add dynamic material types from loaded categories
+        if (this.categories && this.categories.length > 0) {
+            this.categories.forEach(category => {
+                materialTypes.push({
+                    id: category.name,
+                    name: `${category.material_type_name || category.name} Bundles`,
+                    icon: this.getMaterialTypeIcon(category.material_type_name || category.name)
+                });
+            });
+        }
+        
+        styleGrid.innerHTML = materialTypes.map(material => `
+            <div class="style-option" onclick="selectBundlesMaterial('${material.id}')">
+                <div class="style-icon">${material.icon || '📦'}</div>
                 <div class="style-name">${material.name}</div>
             </div>
         `).join('');
@@ -343,6 +604,37 @@ class FencePOS {
         await this.showComponentView();
     }
     
+    async selectBundlesMaterial(materialType) {
+        console.log('Selecting bundles material type:', materialType);
+        
+        if (materialType === 'all') {
+            this.selectedCategory = null; // Show all bundles
+        } else {
+            this.selectedCategory = materialType; // Filter by material type
+        }
+        
+        // Update the selected material type visually
+        document.querySelectorAll('.style-option').forEach(option => option.classList.remove('selected'));
+        event.target.closest('.style-option').classList.add('selected');
+        
+        // Show bundles filtered by material type
+        await this.showBundlesView();
+    }
+    
+    getMaterialTypeIcon(materialTypeName) {
+        const nameLower = materialTypeName.toLowerCase();
+        if (nameLower.includes('vinyl')) return '🪟';
+        if (nameLower.includes('aluminum')) return '🔧';
+        if (nameLower.includes('wood')) return '🪵';
+        if (nameLower.includes('panel')) return '🪟';
+        if (nameLower.includes('rail')) return '━';
+        if (nameLower.includes('post')) return '📏';
+        if (nameLower.includes('gate')) return '🚪';
+        if (nameLower.includes('hardware')) return '🔧';
+        if (nameLower.includes('cap')) return '🎩';
+        return '📦';
+    }
+    
     async showStyleView() {
         this.currentView = 'style';
         
@@ -352,40 +644,155 @@ class FencePOS {
         document.getElementById('optionsView').style.display = 'none';
         document.getElementById('componentView').style.display = 'none';
         
-        // Updated styles for fence types - mapped to new custom_style field values
-        const fenceStyles = {
-            vinyl: [
-                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
-                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
-                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
-                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
-                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
-            ],
-            aluminum: [
-                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
-                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
-                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
-                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
-                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
-            ],
-            'pressure-treated': [
-                { id: 'Solid', name: 'Solid', description: 'Full privacy solid panels' },
-                { id: 'Lattice', name: 'Lattice', description: 'Decorative lattice design' },
-                { id: 'Picket', name: 'Picket', description: 'Traditional picket fence' },
-                { id: 'Ranch Rail', name: 'Ranch Rail', description: '2 or 3 rail ranch style' },
-                { id: 'Spindle', name: 'Spindle', description: 'Classic spindle design' }
-            ]
-        };
-        
-        const styles = fenceStyles[this.selectedCategory] || fenceStyles.vinyl;
+        // Show loading indicator
         const styleGrid = document.getElementById('styleGrid');
+        styleGrid.innerHTML = '<div class="loading-indicator">Loading styles...</div>';
         
-        styleGrid.innerHTML = styles.map(style => `
-            <div class="style-card" onclick="window.fencePOS.selectStyle('${style.id.replace(/'/g, "\\'")}')">
-                <div class="style-name">${style.name}</div>
-                <div class="style-description">${style.description}</div>
-            </div>
-        `).join('');
+        try {
+            // Fetch existing styles from Style doctype filtered by material type
+            const materialTypeName = this.getMaterialTypeName(this.selectedCategory);
+            
+            console.log(`🔍 Fetching styles for material type: ${materialTypeName} (category: ${this.selectedCategory})`);
+            
+            const response = await frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'Style',
+                    filters: {
+                        material_type: materialTypeName
+                    },
+                    fields: ['name', 'style', 'material_type'],
+                    limit_page_length: 50
+                }
+            });
+            
+            if (response.message && response.message.length > 0) {
+                // Transform the response to match expected format
+                let styles = response.message.map(style => ({
+                    id: style.name,
+                    name: style.style,
+                    material_type: style.material_type
+                }));
+                
+                // Custom style ordering as requested - exactly 8 styles, no more no less
+                const styleOrder = {
+                    'Solid': 1,
+                    'Lattice': 2,
+                    'Open Spindle Top': 3,
+                    'Closed Spindle Top': 4,
+                    '3"  Open Picket': 5,  // Note: two spaces between 3" and Open
+                    '1.5" Open Picket': 6,
+                    'Picket': 7,
+                    'Ranch Rail': 8
+                };
+                
+                // Debug: Log the actual style names being loaded
+                console.log('🎨 UPDATED CODE - Actual style names from database:', styles.map(s => s.name));
+                console.log('📅 Code timestamp: ' + new Date().toISOString());
+                
+                // Sort styles according to the specified order
+                styles.sort((a, b) => {
+                    const orderA = styleOrder[a.name] || 999;
+                    const orderB = styleOrder[b.name] || 999;
+                    
+                    // Debug: Log style ordering
+                    console.log(`🔄 Sorting: "${a.name}" (order: ${orderA}) vs "${b.name}" (order: ${orderB})`);
+                    
+                    if (orderA !== orderB) {
+                        return orderA - orderB;
+                    }
+                    
+                    // If both styles have the same order (or both are not in the list), sort alphabetically
+                    return a.name.localeCompare(b.name);
+                });
+                
+                // Debug: Log final sorted order
+                console.log('✅ Final sorted style order:', styles.map(s => s.name));
+                
+                // Render styles from existing doctype records
+                styleGrid.innerHTML = styles.map(style => `
+                    <div class="style-card" data-style-name="${style.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}" onclick="window.fencePOS.selectStyleFromData(this)">
+                        <div class="style-name">${style.name}</div>
+                    </div>
+                `).join('');
+                
+                // Store loaded styles for reference
+                this.availableStyles = styles;
+                
+                console.log(`✅ Loaded ${styles.length} existing styles from Style doctype for material: ${materialTypeName}`);
+                console.log('Available styles:', styles.map(s => s.name));
+                
+            } else {
+                // No styles found in doctype for this material type
+                console.warn(`⚠️ No styles found in Style doctype for material type: ${materialTypeName}`);
+                console.log('Available material types in Style doctype - check if this matches your data');
+                
+                // Let's also check what material types exist in the Style doctype
+                this.debugAvailableMaterialTypes();
+                
+                // Use fallback for now
+                this.showFallbackStyles();
+            }
+            
+        } catch (error) {
+            console.error('Error loading styles from Style doctype:', error);
+            this.showFallbackStyles();
+        }
+    }
+    
+    showFallbackStyles() {
+        // No fallback styles - show message if no styles found
+        const styleGrid = document.getElementById('styleGrid');
+        styleGrid.innerHTML = '<div class="no-styles-message">No styles found for this material type</div>';
+        this.availableStyles = [];
+    }
+    
+    getMaterialTypeName(category) {
+        // Return category as-is since we're using actual Material Type names
+        return category;
+    }
+    
+    async debugAvailableMaterialTypes() {
+        try {
+            console.log('🔍 Checking available material types in Style doctype...');
+            
+            const response = await frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'Style',
+                    fields: ['material_type', 'style'],
+                    limit_page_length: 100
+                }
+            });
+            
+            if (response.message && response.message.length > 0) {
+                const materialTypes = [...new Set(response.message.map(s => s.material_type))];
+                console.log('📋 Available Material Types in Style doctype:', materialTypes);
+                
+                // Group styles by material type
+                const groupedStyles = {};
+                response.message.forEach(style => {
+                    if (!groupedStyles[style.material_type]) {
+                        groupedStyles[style.material_type] = [];
+                    }
+                    groupedStyles[style.material_type].push(style.style);
+                });
+                
+                console.log('📊 Styles by Material Type:');
+                for (const [matType, styles] of Object.entries(groupedStyles)) {
+                    console.log(`  ${matType}: ${styles.join(', ')}`);
+                }
+            } else {
+                console.warn('❌ No Style records found in doctype');
+            }
+        } catch (error) {
+            console.error('Error debugging material types:', error);
+        }
+    }
+    
+    selectStyleFromData(element) {
+        const styleName = element.getAttribute('data-style-name');
+        this.selectStyle(styleName);
     }
     
     async selectStyle(styleId) {
@@ -405,6 +812,9 @@ class FencePOS {
         
         // Load dynamic options from item attributes
         await this.loadDynamicOptions();
+        
+        // Update filter visibility based on selected style
+        this.updateFilterVisibility();
     }
     
     selectHeight(height) {
@@ -431,6 +841,124 @@ class FencePOS {
         document.querySelectorAll('#colorGrid .option-button').forEach(btn => btn.classList.remove('selected'));
     }
     
+    selectRailType(railType) {
+        this.selectedRailType = railType;
+        document.querySelectorAll('#railTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById(`railtype-${railType.replace(/\s+/g, '-')}`).classList.add('selected');
+    }
+    
+    clearRailType() {
+        console.log('Clearing rail type selection');
+        this.selectedRailType = null;
+        document.querySelectorAll('#railTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    selectLatticeType(latticeType) {
+        this.selectedLatticeType = latticeType;
+        document.querySelectorAll('#latticeTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById(`latticetype-${latticeType.replace(/\s+/g, '-')}`).classList.add('selected');
+    }
+    
+    clearLatticeType() {
+        console.log('Clearing lattice type selection');
+        this.selectedLatticeType = null;
+        document.querySelectorAll('#latticeTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    selectOrientation(orientation) {
+        this.selectedOrientation = orientation;
+        document.querySelectorAll('#orientationGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById(`orientation-${orientation.replace(/\s+/g, '-')}`).classList.add('selected');
+    }
+    
+    clearOrientation() {
+        console.log('Clearing orientation selection');
+        this.selectedOrientation = null;
+        document.querySelectorAll('#orientationGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    selectPicketType(picketType) {
+        this.selectedPicketType = picketType;
+        document.querySelectorAll('#picketTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+        document.getElementById(`pickettype-${picketType.replace(/\s+/g, '-')}`).classList.add('selected');
+    }
+    
+    clearPicketType() {
+        console.log('Clearing picket type selection');
+        this.selectedPicketType = null;
+        document.querySelectorAll('#picketTypeGrid .option-button').forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    updateFilterVisibility() {
+        console.log(`🔧 Updating filter visibility for style: ${this.selectedStyle}`);
+        
+        let neededFilters;
+        
+        // Special handling for Lattice style - check available material classes
+        if (this.selectedStyle === 'Lattice') {
+            const availableClasses = new Set();
+            if (this.products && this.products.length > 0) {
+                this.products.forEach(product => {
+                    if (product.custom_material_class) {
+                        availableClasses.add(product.custom_material_class);
+                    }
+                });
+            }
+            
+            console.log(`🔧 Lattice style - available classes:`, Array.from(availableClasses));
+            
+            // Collect all unique filters needed for Lattice across available material classes
+            const latticeFilters = new Set();
+            availableClasses.forEach(materialClass => {
+                const classFilters = this.latticeClassFilters[materialClass];
+                if (classFilters) {
+                    classFilters.forEach(filter => latticeFilters.add(filter));
+                }
+            });
+            
+            // If no products loaded yet, show all Lattice filters
+            if (latticeFilters.size === 0) {
+                neededFilters = ['Height', 'Color', 'Rail Type', 'Lattice Type'];
+            } else {
+                neededFilters = Array.from(latticeFilters);
+            }
+        } else {
+            // For all other styles, use simple direct mapping
+            neededFilters = this.styleFilters[this.selectedStyle] || ['Height', 'Color', 'Rail Type'];
+        }
+        
+        console.log(`🔧 Filters needed for style ${this.selectedStyle}:`, neededFilters);
+        
+        // Show/hide filter sections based on what's needed
+        const filterSections = [
+            { name: 'Height', element: document.querySelector('#heightGrid').parentElement },
+            { name: 'Color', element: document.querySelector('#colorGrid').parentElement },
+            { name: 'Rail Type', element: document.querySelector('#railTypeGrid').parentElement },
+            { name: 'Lattice Type', element: document.getElementById('latticeTypeSection') },
+            { name: 'Orientation', element: document.getElementById('orientationSection') },
+            { name: 'Picket Type', element: document.getElementById('picketTypeSection') }
+        ];
+        
+        filterSections.forEach(section => {
+            if (section.element) {
+                if (neededFilters.includes(section.name)) {
+                    section.element.style.display = 'block';
+                    console.log(`✅ Showing ${section.name} filter`);
+                } else {
+                    section.element.style.display = 'none';
+                    console.log(`❌ Hiding ${section.name} filter`);
+                }
+            }
+        });
+        
+        // Update section title to reflect active filters
+        const optionsTitle = document.getElementById('optionsTitle');
+        if (optionsTitle) {
+            const activeFilters = neededFilters.join(', ');
+            optionsTitle.textContent = `Filter by ${activeFilters} (Optional)`;
+        }
+    }
+    
     async proceedToComponents() {
         // Allow proceeding without height and color selection
         // Height and color are optional filters that will be applied if selected
@@ -450,12 +978,26 @@ class FencePOS {
         await this.loadComponents();
     }
     
+    async showBundlesView() {
+        this.currentView = 'bundles';
+        
+        // Hide other views
+        document.getElementById('categoryView').style.display = 'none';
+        document.getElementById('styleView').style.display = 'none';
+        document.getElementById('optionsView').style.display = 'none';
+        document.getElementById('componentView').style.display = 'block';
+        
+        // Load and display bundles
+        await this.loadBundles();
+    }
+    
     async loadComponents() {
         console.log('Loading components for:', {
             category: this.selectedCategory,
             style: this.selectedStyle,
             height: this.selectedHeight,
-            color: this.selectedColor
+            color: this.selectedColor,
+            railType: this.selectedRailType
         });
         
         try {
@@ -464,7 +1006,7 @@ class FencePOS {
             
             if (products && products.length > 0) {
                 console.log('Displaying real products:', products.length);
-                this.displayRealProducts(products);
+                await this.displayRealProducts(products);
             } else {
                 console.log('No products found in database');
                 this.displayNoProductsMessage();
@@ -475,12 +1017,512 @@ class FencePOS {
         }
     }
     
+    async loadBundles() {
+        console.log('Loading bundles for:', {
+            category: this.selectedCategory,
+            isBundlesMode: this.isBundlesMode
+        });
+        
+        try {
+            // Load bundles from webshop
+            const bundles = await this.getBundlesFromWebshop();
+            
+            if (bundles && bundles.length > 0) {
+                console.log('Displaying bundles:', bundles.length);
+                await this.displayBundles(bundles);
+            } else {
+                console.log('No bundles found in database');
+                this.displayNoBundlesMessage();
+            }
+        } catch (error) {
+            console.error('Error loading bundles:', error);
+            this.displayNoBundlesMessage();
+        }
+    }
+    
+    async getBundlesFromWebshop() {
+        try {
+            console.log('Fetching bundles with filters:', {
+                category: this.selectedCategory,
+                isBundlesMode: this.isBundlesMode
+            });
+            
+            // Use the existing POS API to get bundles
+            const response = await frappe.call({
+                method: 'webshop.pos_api.get_bundles_by_material_type',
+                args: {
+                    material_type: this.selectedCategory,
+                    price_list: this.currentPriceList
+                }
+            });
+            
+            if (response && response.message) {
+                console.log('Bundles API response:', response.message);
+                return response.message.bundles || [];
+            }
+            
+            return [];
+        } catch (error) {
+            console.error('Error fetching bundles:', error);
+            return [];
+        }
+    }
+    
+    async displayBundles(bundles) {
+        const componentGrid = document.getElementById('componentGrid');
+        if (!componentGrid) return;
+        
+        // Group bundles by material type
+        const groupedBundles = this.groupBundlesByMaterialType(bundles);
+        
+        let html = '';
+        
+        // Display each material type section
+        Object.keys(groupedBundles).forEach(materialType => {
+            const materialBundles = groupedBundles[materialType];
+            const icon = this.getMaterialTypeIcon(materialType);
+            
+            html += `
+                <div class="material-section">
+                    <div class="material-header">
+                        <span class="material-icon">${icon}</span>
+                        <span class="material-name">${materialType} Bundles</span>
+                        <span class="bundle-count">(${materialBundles.length} bundles)</span>
+                    </div>
+                    <div class="bundle-grid">
+                        ${materialBundles.map(bundle => this.createBundleCard(bundle)).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        componentGrid.innerHTML = html;
+    }
+    
+    groupBundlesByMaterialType(bundles) {
+        const grouped = {};
+        
+        bundles.forEach(bundle => {
+            // Extract material type from bundle name or item group
+            const materialType = this.extractMaterialType(bundle);
+            
+            if (!grouped[materialType]) {
+                grouped[materialType] = [];
+            }
+            grouped[materialType].push(bundle);
+        });
+        
+        return grouped;
+    }
+    
+    extractMaterialType(bundle) {
+        // Try to extract material type from various fields
+        const name = (bundle.item_name || bundle.item_code || '').toLowerCase();
+        const itemGroup = (bundle.item_group || '').toLowerCase();
+        const description = (bundle.description || '').toLowerCase();
+        
+        // For Cap and Hardware items, check if they have custom_type_of_material data
+        if (itemGroup === 'cap' || itemGroup === 'hardware') {
+            // If this item has custom_type_of_material, it might be available in multiple material types
+            // For now, we'll still categorize it based on name/description, but it will be available in other material types too
+            // due to the backend filtering logic
+        }
+        
+        // Check for material types in name, description, or item group
+        if (name.includes('vinyl') || itemGroup.includes('vinyl') || description.includes('vinyl')) return 'Vinyl';
+        if (name.includes('aluminum') || itemGroup.includes('aluminum') || description.includes('aluminum')) return 'Aluminum';
+        if (name.includes('wood') || itemGroup.includes('wood') || description.includes('wood')) return 'Wood';
+        
+        // Check for specific fence components that might indicate material type
+        if (name.includes('fence') || description.includes('fence')) {
+            // Try to infer from context
+            if (name.includes('panel') || name.includes('post') || name.includes('rail')) {
+                return 'Vinyl'; // Default to Vinyl for fence components
+            }
+        }
+        
+        // Check for specific product types
+        if (name.includes('gate') || description.includes('gate')) return 'Vinyl';
+        if (name.includes('panel') || description.includes('panel')) return 'Vinyl';
+        if (name.includes('post') || description.includes('post')) return 'Vinyl';
+        if (name.includes('rail') || description.includes('rail')) return 'Vinyl';
+        
+        // For Cap and Hardware items, default to Vinyl if no specific material type found
+        if (itemGroup === 'cap' || itemGroup === 'hardware') {
+            return 'Vinyl'; // Default material type for caps and hardware
+        }
+        
+        // Default fallback
+        return 'General';
+    }
+    
+    createBundleCard(bundle) {
+        const price = bundle.price_list_rate || bundle.rate || 0;
+        const stockStatus = bundle.actual_qty > 0 ? 'In Stock' : 'Out of Stock';
+        const stockClass = bundle.actual_qty > 0 ? 'in-stock' : 'out-of-stock';
+        
+        return `
+            <div class="item-card bundle-card" data-item-id="${bundle.item_code}" data-item-name="${bundle.item_name}" data-price="${price}" id="card-${bundle.item_code.replace(/[^a-zA-Z0-9]/g, '')}">
+                <div class="item-image">
+                    <div class="bundle-icon">📦</div>
+                </div>
+                <div class="item-details">
+                    <div class="item-name">${bundle.item_name}</div>
+                    <div class="item-code">${bundle.item_code}</div>
+                    <div class="item-price">$${price.toFixed(2)}</div>
+                    <div class="stock-status ${stockClass}">${stockStatus}</div>
+                </div>
+                <div class="item-controls">
+                    <div class="quantity-controls">
+                        <button class="qty-btn minus-btn" onclick="updateItemQuantity('${bundle.item_code}', -1)" disabled>-</button>
+                        <input type="number" class="qty-input" value="0" min="0" onchange="updateItemQuantity('${bundle.item_code}', 0, this.value)">
+                        <button class="qty-btn plus-btn" onclick="updateItemQuantity('${bundle.item_code}', 1)">+</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    displayNoBundlesMessage() {
+        const componentGrid = document.getElementById('componentGrid');
+        if (!componentGrid) return;
+        
+        componentGrid.innerHTML = `
+            <div class="no-products-message">
+                <div class="no-products-icon">📦</div>
+                <div class="no-products-title">No Bundles Found</div>
+                <div class="no-products-text">
+                    No bundles are available for the selected material type.
+                    <br>Try selecting a different material type or check back later.
+                </div>
+            </div>
+        `;
+    }
+    
+    // =============================================================================
+    // TEMPLATE FUNCTIONS
+    // =============================================================================
+    
+    selectTemplates() {
+        console.log('📋 Selecting Templates mode');
+        this.isTemplatesMode = true;
+        this.isBundlesMode = false;
+        this.isPopularMode = false;
+        
+        // Clear other selections
+        this.clearAllSelections();
+        
+        // Update button states
+        this.updateButtonStates();
+        
+        // Show templates view
+        this.showTemplatesView();
+    }
+    
+    showTemplatesView() {
+        this.currentView = 'templates';
+        this.hideAllViews();
+        document.getElementById('templatesView').style.display = 'block';
+        
+        // Update title - templates view uses section-title, not view-header
+        const titleElement = document.querySelector('#templatesView .section-title');
+        if (titleElement) {
+            titleElement.textContent = 'Quotation Templates';
+        }
+        
+        // Load templates
+        this.loadTemplates();
+    }
+    
+    async loadTemplates() {
+        try {
+            console.log('📋 Loading quotation templates...');
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.get_quotation_templates',
+                args: {
+                    category: document.getElementById('templateCategoryFilter')?.value || 'all',
+                    customer_type: document.getElementById('templateCustomerTypeFilter')?.value || 'all',
+                    search_term: document.getElementById('templateSearchInput')?.value || null
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                this.displayTemplates(response.message.templates);
+            } else {
+                this.displayNoTemplatesMessage();
+            }
+        } catch (error) {
+            console.error('❌ Error loading templates:', error);
+            this.displayNoTemplatesMessage();
+        }
+    }
+    
+    displayTemplates(templates) {
+        const templatesContent = document.getElementById('templatesContent');
+        
+        if (!templates || templates.length === 0) {
+            this.displayNoTemplatesMessage();
+            return;
+        }
+        
+        let html = '<div class="template-grid">';
+        
+        templates.forEach(template => {
+            html += this.createTemplateCard(template);
+        });
+        
+        html += '</div>';
+        templatesContent.innerHTML = html;
+    }
+    
+    createTemplateCard(template) {
+        const createdDate = new Date(template.created_date).toLocaleDateString();
+        const lastUsed = template.last_used ? new Date(template.last_used).toLocaleDateString() : 'Never';
+        const useCount = template.use_count || 0;
+        
+        return `
+            <div class="template-card" onclick="loadTemplate('${template.name}')">
+                <div class="template-header">
+                    <h4 class="template-name">${template.template_name}</h4>
+                    <span class="template-category">${template.category}</span>
+                </div>
+                <div class="template-description">
+                    ${template.description || 'No description available'}
+                </div>
+                <div class="template-meta">
+                    <div class="template-stats">
+                        <span>📅 Created: ${createdDate}</span>
+                        <span>🔄 Used: ${useCount} times</span>
+                        <span>👤 By: ${template.created_by}</span>
+                    </div>
+                </div>
+                <div class="template-actions-card">
+                    <button class="btn btn-load" onclick="event.stopPropagation(); loadTemplate('${template.name}')">
+                        📥 Load
+                    </button>
+                    <button class="btn btn-delete" onclick="event.stopPropagation(); deleteTemplate('${template.name}')">
+                        🗑️ Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    displayNoTemplatesMessage() {
+        const templatesContent = document.getElementById('templatesContent');
+        templatesContent.innerHTML = `
+            <div class="no-templates-message">
+                <div class="icon">📋</div>
+                <h3>No Templates Found</h3>
+                <p>No quotation templates found. Create your first template by saving your current cart.</p>
+                <button class="btn btn-primary" onclick="showSaveTemplateModal()">
+                    <i class="fa fa-save"></i> Create First Template
+                </button>
+            </div>
+        `;
+    }
+    
+    async saveTemplate() {
+        try {
+            const templateName = document.getElementById('templateName').value.trim();
+            const description = document.getElementById('templateDescription').value.trim();
+            const category = document.getElementById('templateCategory').value;
+            const customerType = document.getElementById('templateCustomerType').value;
+            const priceList = document.getElementById('templatePriceList').value;
+            const notes = document.getElementById('templateNotes').value.trim();
+            
+            if (!templateName) {
+                alert('Please enter a template name');
+                return;
+            }
+            
+            console.log('💾 Saving template:', templateName);
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.save_cart_as_template',
+                args: {
+                    template_name: templateName,
+                    description: description,
+                    category: category,
+                    customer_type: customerType,
+                    price_list: priceList || null,
+                    template_notes: notes
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                alert(`Template '${templateName}' saved successfully!`);
+                this.closeSaveTemplateModal();
+                this.loadTemplates(); // Refresh templates list
+            } else {
+                alert(`Error saving template: ${response.message.message || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('❌ Error saving template:', error);
+            alert('Error saving template. Please try again.');
+        }
+    }
+    
+    async loadTemplate(templateName) {
+        try {
+            console.log('📥 Loading template:', templateName);
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.load_quotation_template',
+                args: {
+                    template_name: templateName,
+                    price_list: this.currentPriceList
+                }
+            });
+            
+            console.log('📋 Template loading response:', response);
+            
+            if (response.message && response.message.success) {
+                alert(`Template loaded successfully! ${response.message.items_count} items added to cart.`);
+                
+                // Switch back to main view first
+                this.clearAllSelections();
+                this.hideAllViews();
+                document.getElementById('categoryView').style.display = 'block';
+                this.currentView = 'category';
+                
+                // Then refresh cart display (this will update product cards if they're visible)
+                await this.updateCartDisplay();
+            } else {
+                console.error('❌ Template loading failed:', response.message);
+                const errorMsg = response.message?.message || 'Unknown error';
+                const debugInfo = response.message?.debug_info;
+                
+                if (debugInfo) {
+                    console.error('🔍 Debug info:', debugInfo);
+                    alert(`Error loading template: ${errorMsg}\n\nDebug info: ${JSON.stringify(debugInfo, null, 2)}`);
+                } else {
+                    alert(`Error loading template: ${errorMsg}`);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error loading template:', error);
+            alert('Error loading template. Please try again.');
+        }
+    }
+    
+    async deleteTemplate(templateName) {
+        if (!confirm(`Are you sure you want to delete template '${templateName}'?`)) {
+            return;
+        }
+        
+        try {
+            console.log('🗑️ Deleting template:', templateName);
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.delete_quotation_template',
+                args: {
+                    template_name: templateName
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                alert('Template deleted successfully!');
+                this.loadTemplates(); // Refresh templates list
+            } else {
+                alert(`Error deleting template: ${response.message.message || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('❌ Error deleting template:', error);
+            alert('Error deleting template. Please try again.');
+        }
+    }
+    
+    showSaveTemplateModal() {
+        // Check if cart has items
+        if (!this.cartItems || this.cartItems.length === 0) {
+            alert('Please add items to your cart before saving as template.');
+            return;
+        }
+        
+        // Set current price list in modal
+        const priceListSelect = document.getElementById('templatePriceList');
+        if (priceListSelect && this.currentPriceList) {
+            priceListSelect.value = this.currentPriceList;
+        }
+        
+        // Show modal
+        document.getElementById('saveTemplateModal').style.display = 'flex';
+    }
+    
+    closeSaveTemplateModal() {
+        document.getElementById('saveTemplateModal').style.display = 'none';
+        
+        // Clear form
+        document.getElementById('saveTemplateForm').reset();
+    }
+    
+    filterTemplates() {
+        this.loadTemplates();
+    }
+    
+    searchTemplates() {
+        // Debounce search
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => {
+            this.loadTemplates();
+        }, 300);
+    }
+    
+    refreshTemplates() {
+        this.loadTemplates();
+    }
+    
+    // Helper functions for template system
+    hideAllViews() {
+        const views = [
+            'categoryView', 'styleView', 'optionsView', 'componentView', 
+            'popularView', 'bundlesMaterialView', 'bundlesView', 'templatesView'
+        ];
+        
+        views.forEach(viewId => {
+            const element = document.getElementById(viewId);
+            if (element) {
+                element.style.display = 'none';
+            }
+        });
+    }
+    
+    updateButtonStates() {
+        // Update sidebar button states
+        const buttons = [
+            { id: 'popularBtn', active: this.isPopularMode },
+            { id: 'bundlesBtn', active: this.isBundlesMode },
+            { id: 'templatesBtn', active: this.isTemplatesMode }
+        ];
+        
+        buttons.forEach(button => {
+            const element = document.getElementById(button.id);
+            if (element) {
+                if (button.active) {
+                    element.classList.add('active');
+                } else {
+                    element.classList.remove('active');
+                }
+            }
+        });
+    }
+    
+    clearAllSelections() {
+        this.isPopularMode = false;
+        this.isBundlesMode = false;
+        this.isTemplatesMode = false;
+        this.updateButtonStates();
+    }
+    
     async getProductsFromWebshop() {
         try {
             console.log('Fetching products with filters:', {
                 category: this.selectedCategory,
                 height: this.selectedHeight,
                 color: this.selectedColor,
+                railType: this.selectedRailType,
                 style: this.selectedStyle,
                 isPopularMode: this.isPopularMode
             });
@@ -503,8 +1545,17 @@ class FencePOS {
             }
             
             // Method 1: Try new template-aware fence POS API (includes has_variants=1 items)
-            if (this.selectedCategory || this.selectedHeight || this.selectedColor || this.selectedStyle) {
+            if (this.selectedCategory || this.selectedHeight || this.selectedColor || this.selectedRailType || this.selectedStyle) {
                 console.log('Using template-aware fence POS API...');
+                console.log('🔥 FRONTEND FILTER - Before API call:', {
+                    category: this.selectedCategory,
+                    height: this.selectedHeight,
+                    color: this.selectedColor,
+                    style: this.selectedStyle,
+                    railType: this.selectedRailType
+                });
+
+                console.log(`🔥 CALLING POS API WITH PRICE LIST: ${this.currentPriceList}`);
                 const response1 = await frappe.call({
                     method: 'webshop.webshop.pos_api.get_fence_items_for_pos',
                     args: {
@@ -512,11 +1563,246 @@ class FencePOS {
                         height: this.selectedHeight,
                         color: this.selectedColor,
                         style: this.selectedStyle,
+                        railType: this.selectedRailType,
                         price_list: this.currentPriceList
                     }
                 });
+                console.log(`🔥 POS API RESPONSE:`, response1.message);
+                console.log(`🔥 BACKEND CONFIRMS PRICE LIST: ${response1.message?.debug_price_list}`);
                 products = response1.message?.items || [];
                 console.log('Products found with template-aware POS API:', products.length);
+                
+                // Debug first few products to see the exact pricing data structure
+                if (products.length > 0) {
+                    console.log(`🔥 FIRST PRODUCT PRICING DEBUG:`, {
+                        name: products[0].name,
+                        pos_price: products[0].pos_price,
+                        price_list_rate: products[0].price_list_rate,
+                        all_keys: Object.keys(products[0])
+                    });
+                }
+                
+                // 🎯 COMPREHENSIVE FRONTEND FILTERING
+                if (products.length > 0) {
+                    console.log('🔥 APPLYING FRONTEND FILTERS');
+                    let filteredProducts = [...products];
+                    const originalCount = products.length;
+                    
+                    // DEBUG: Check sample product structure
+                    if (filteredProducts.length > 0) {
+                        console.log('🔍 Sample product:', {
+                            name: filteredProducts[0].item_name,
+                            material_class: filteredProducts[0].custom_material_class,
+                            material_type: filteredProducts[0].custom_material_type,
+                            style: filteredProducts[0].custom_style,
+                            attributes: filteredProducts[0].attributes
+                        });
+                    }
+                    
+                    // MATERIAL TYPE FILTER (primary filter)
+                    if (this.selectedCategory) {
+                        const beforeMaterial = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => 
+                            product.custom_material_type === this.selectedCategory
+                        );
+                        console.log(`🏗️ Material Type filtering (${this.selectedCategory}): ${beforeMaterial} → ${filteredProducts.length} products`);
+                    }
+                    
+                    // STYLE FILTER (exempt Hardware and Caps)
+                    if (this.selectedStyle) {
+                        const beforeStyle = filteredProducts.length;
+                        
+                        // Debug: Show what custom_style values exist
+                        const uniqueStyles = [...new Set(filteredProducts.map(p => p.custom_style))];
+                        console.log(`🎨 Available custom_style values:`, uniqueStyles);
+                        console.log(`🎨 Looking for style: "${this.selectedStyle}"`);
+                        
+                        filteredProducts = filteredProducts.filter(product => {
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            if (isHardwareOrCap) {
+                                return true; // Exempt Hardware and Caps from style filtering
+                            }
+                            
+                            // Try exact match first
+                            if (product.custom_style === this.selectedStyle) {
+                                return true;
+                            }
+                            
+                            // Try partial match for styles like "1.5" Open Picket" -> might be stored as "Open Picket"
+                            const productStyle = product.custom_style || '';
+                            const selectedStyle = this.selectedStyle || '';
+                            
+                            // Check if selected style contains the product style or vice versa
+                            if (selectedStyle.includes(productStyle) || productStyle.includes(selectedStyle)) {
+                                console.log(`✅ Partial match: "${selectedStyle}" matches "${productStyle}"`);
+                                return true;
+                            }
+                            
+                            console.log(`❌ Style mismatch: ${product.item_name} has custom_style="${productStyle}", need "${selectedStyle}"`);
+                            return false;
+                        });
+                        console.log(`🎨 Style filtering (${this.selectedStyle}): ${beforeStyle} → ${filteredProducts.length} products (Hardware/Caps exempted)`);
+                    }
+                    
+                    // HEIGHT FILTER (exempt Hardware and Caps)
+                    if (this.selectedHeight) {
+                        const beforeHeight = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productHeight = attributes['Fence Height'];
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            
+                            if (isHardwareOrCap) {
+                                return true; // Exempt Hardware and Caps from height filtering
+                            }
+                            
+                            const matches = productHeight === this.selectedHeight;
+                            if (!matches && productHeight) {
+                                console.log(`❌ Height mismatch: ${product.item_name} has ${productHeight}, need ${this.selectedHeight}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`📏 Height filtering (${this.selectedHeight}): ${beforeHeight} → ${filteredProducts.length} products (Hardware/Caps exempted)`);
+                    }
+                    
+                    // COLOR FILTER (apply to all items including Hardware and Caps)
+                    if (this.selectedColor) {
+                        const beforeColor = filteredProducts.length;
+                        // Database stores full color names, not abbreviations
+                        const selectedColor = this.selectedColor; // Use the selected color directly
+                        
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productColor = attributes['Color'];
+                            const matches = productColor === selectedColor;
+                            
+                            if (!matches && productColor) {
+                                console.log(`❌ Color mismatch: ${product.item_name} has ${productColor}, need ${selectedColor}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`🌈 Color filtering (${this.selectedColor}): ${beforeColor} → ${filteredProducts.length} products`);
+                    }
+                    
+                    // UNIFIED STYLE-BASED FILTERING
+                    // Apply all selected filters for all styles
+                    
+                    // RAIL TYPE FILTER (exempt Hardware and Caps, and apply Lattice class-specific rules)
+                    if (this.selectedRailType) {
+                        const beforeRailType = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productRailType = attributes['Rail Type'];
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            const materialClass = product.custom_material_class;
+                            
+                            if (isHardwareOrCap) {
+                                return true; // Exempt Hardware and Caps from rail type filtering
+                            }
+                            
+                            // Special handling for Lattice style
+                            if (this.selectedStyle === 'Lattice') {
+                                const allowedFilters = this.latticeClassFilters[materialClass];
+                                if (allowedFilters && !allowedFilters.includes('Rail Type')) {
+                                    return true; // This material class doesn't filter by Rail Type
+                                }
+                            }
+                            
+                            const matches = productRailType === this.selectedRailType;
+                            if (!matches && productRailType) {
+                                console.log(`❌ Rail Type mismatch: ${product.item_name} has ${productRailType}, need ${this.selectedRailType}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`🚂 Rail Type filtering (${this.selectedRailType}): ${beforeRailType} → ${filteredProducts.length} products (Hardware/Caps exempted)`);
+                    }
+                    
+                    // LATTICE TYPE FILTER (exempt Hardware and Caps, and apply Lattice class-specific rules)
+                    if (this.selectedLatticeType) {
+                        const beforeLatticeType = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productLatticeType = attributes['Lattice Type'];
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            const materialClass = product.custom_material_class;
+                            
+                            if (isHardwareOrCap) {
+                                return true; // Exempt Hardware and Caps
+                            }
+                            
+                            // Special handling for Lattice style
+                            if (this.selectedStyle === 'Lattice') {
+                                const allowedFilters = this.latticeClassFilters[materialClass];
+                                if (allowedFilters && !allowedFilters.includes('Lattice Type')) {
+                                    return true; // This material class doesn't filter by Lattice Type
+                                }
+                            }
+                            
+                            const matches = productLatticeType === this.selectedLatticeType;
+                            if (!matches && productLatticeType) {
+                                console.log(`❌ Lattice Type mismatch: ${product.item_name} has ${productLatticeType}, need ${this.selectedLatticeType}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`🔲 Lattice Type filtering (${this.selectedLatticeType}): ${beforeLatticeType} → ${filteredProducts.length} products (Hardware/Caps exempted)`);
+                    }
+                    
+                    // ORIENTATION FILTER (exempt Hardware, Caps, and Posts)
+                    if (this.selectedOrientation) {
+                        const beforeOrientation = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productOrientation = attributes['Orientation'];
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            const isPost = product.custom_material_class === 'Post';
+                            
+                            if (isHardwareOrCap || isPost) {
+                                return true; // Exempt Hardware, Caps, and Posts
+                            }
+                            
+                            const matches = productOrientation === this.selectedOrientation;
+                            if (!matches && productOrientation) {
+                                console.log(`❌ Orientation mismatch: ${product.item_name} has ${productOrientation}, need ${this.selectedOrientation}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`🔄 Orientation filtering (${this.selectedOrientation}): ${beforeOrientation} → ${filteredProducts.length} products (Hardware/Caps/Posts exempted)`);
+                    }
+                    
+                    // PICKET TYPE FILTER (exempt Hardware and Caps)
+                    if (this.selectedPicketType) {
+                        const beforePicketType = filteredProducts.length;
+                        filteredProducts = filteredProducts.filter(product => {
+                            const attributes = product.attributes || {};
+                            const productPicketType = attributes['Picket Type'];
+                            const isHardwareOrCap = product.custom_material_class === 'Hardware' || product.custom_material_class === 'Cap';
+                            
+                            if (isHardwareOrCap) {
+                                return true; // Exempt Hardware and Caps
+                            }
+                            
+                            const matches = productPicketType === this.selectedPicketType;
+                            if (!matches && productPicketType) {
+                                console.log(`❌ Picket Type mismatch: ${product.item_name} has ${productPicketType}, need ${this.selectedPicketType}`);
+                            }
+                            return matches;
+                        });
+                        console.log(`🔳 Picket Type filtering (${this.selectedPicketType}): ${beforePicketType} → ${filteredProducts.length} products (Hardware/Caps exempted)`);
+                    }
+                    
+                    products = filteredProducts;
+                    console.log(`✅ FINAL FILTERING RESULT: ${originalCount} → ${products.length} products`);
+                    
+                    // Show final product names for verification
+                    if (products.length <= 20) {
+                        console.log('📋 Final products:', products.map(p => p.item_name));
+                    } else {
+                        console.log('📋 Final products (first 10):', products.slice(0, 10).map(p => p.item_name));
+                        console.log(`   ... and ${products.length - 10} more`);
+                    }
+                }
+                
+
             }
             
             // Method 1.5: If no products found with complex filters, try simple template API
@@ -660,7 +1946,7 @@ class FencePOS {
                         args: {
                             doctype: 'Item',
                             filters: { item_code: websiteItem.item_code },
-                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'standard_rate', 'stock_uom', 'item_group', 'custom_material_type', 'custom_material_class']
+                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'standard_rate', 'stock_uom', 'item_group', 'custom_material_type', 'custom_material_class', 'custom_rail_type', 'custom_ranch_rail_type']
                         }
                     });
                     
@@ -675,13 +1961,32 @@ class FencePOS {
                         // Enhanced filtering using custom_material_type, custom_material_class, and selection criteria
                         let includeItem = true;
                         
-                        // Category/Material filtering
+                        // EXEMPTIONS: Special material class handling
+                        const materialClass = itemData.custom_material_class ? itemData.custom_material_class.toLowerCase() : '';
+                        const isHardware = materialClass === 'hardware';
+                        const isCap = materialClass === 'cap';
+                        
+                        // Category/Material filtering with exemptions
                         if (this.selectedCategory) {
-                            const categoryMatch = 
+                            let categoryMatch = 
                                 (itemData.custom_material_type && itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (itemData.custom_material_class && itemData.custom_material_class.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (itemData.item_group && itemData.item_group.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (websiteItem.web_item_name.toLowerCase().includes(this.selectedCategory.toLowerCase()));
+                            
+                            // EXEMPTION 1: Hardware items - show if material type matches selected category
+                            if (isHardware && itemData.custom_material_type && 
+                                itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) {
+                                categoryMatch = true;
+                                console.log(`🔧 HARDWARE EXEMPTION: ${websiteItem.item_code} - showing hardware item for material type match`);
+                            }
+                            
+                            // EXEMPTION 2: Cap items - show if material type matches (color will be checked separately)
+                            if (isCap && itemData.custom_material_type && 
+                                itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) {
+                                categoryMatch = true;
+                                console.log(`🧢 CAP EXEMPTION: ${websiteItem.item_code} - showing cap item for material type match`);
+                            }
                             
                             includeItem = includeItem && categoryMatch;
                         }
@@ -694,8 +1999,39 @@ class FencePOS {
                         
                         // Color filtering - check item name for color match
                         if (this.selectedColor && includeItem) {
-                            const colorMatch = websiteItem.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase());
-                            includeItem = includeItem && colorMatch;
+                            let colorMatch = websiteItem.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase());
+                            
+                            // EXEMPTION for Cap items: Must match both material type AND color
+                            if (isCap) {
+                                // Cap items require color match when color is selected
+                                includeItem = includeItem && colorMatch;
+                            } else {
+                                // Regular items: color filtering is optional
+                                includeItem = includeItem && colorMatch;
+                            }
+                        } else if (this.selectedColor && isCap) {
+                            // If color is selected but this cap item doesn't match, exclude it
+                            includeItem = false;
+                        }
+                        
+                        // Rail type filtering - check attributes first, then item name as fallback
+                        if (this.selectedRailType && includeItem) {
+                            let railTypeMatch = false;
+                            
+                            // For Ranch Rail style, check Ranch Rail Type attribute
+                            if (this.selectedStyle === 'Ranch Rail' && itemData.custom_ranch_rail_type) {
+                                railTypeMatch = itemData.custom_ranch_rail_type.toLowerCase() === this.selectedRailType.toLowerCase();
+                            }
+                            // For other styles, check generic Rail Type attribute
+                            else if (itemData.custom_rail_type) {
+                                railTypeMatch = itemData.custom_rail_type.toLowerCase() === this.selectedRailType.toLowerCase();
+                            }
+                            // Fallback: check item name
+                            else {
+                                railTypeMatch = websiteItem.web_item_name.toLowerCase().includes(this.selectedRailType.toLowerCase());
+                            }
+                            
+                            includeItem = includeItem && railTypeMatch;
                         }
                         
                         // Style filtering - use custom_style field first, then custom_material_class as fallback
@@ -749,6 +2085,32 @@ class FencePOS {
                             if (this.selectedColor && !itemNameLower.includes(this.selectedColor.toLowerCase())) {
                                 filterReasons.push(`Color: "${this.selectedColor}" not found in name`);
                             }
+                            if (this.selectedRailType) {
+                                let railTypeFound = false;
+                                if (this.selectedStyle === 'Ranch Rail' && itemData.custom_ranch_rail_type) {
+                                    railTypeFound = itemData.custom_ranch_rail_type.toLowerCase() === this.selectedRailType.toLowerCase();
+                                } else if (itemData.custom_rail_type) {
+                                    railTypeFound = itemData.custom_rail_type.toLowerCase() === this.selectedRailType.toLowerCase();
+                                } else {
+                                    railTypeFound = itemNameLower.includes(this.selectedRailType.toLowerCase());
+                                }
+                                if (!railTypeFound) {
+                                    filterReasons.push(`Rail Type: "${this.selectedRailType}" not matched (custom_rail_type: ${itemData.custom_rail_type}, custom_ranch_rail_type: ${itemData.custom_ranch_rail_type})`);
+                                }
+                            }
+                            
+                            // Add exemption info to debug logs
+                            if (isHardware) {
+                                filterReasons.push(`✅ EXEMPTION: Hardware item - shown for material type match`);
+                            }
+                            if (isCap) {
+                                if (this.selectedColor) {
+                                    filterReasons.push(`✅ EXEMPTION: Cap item - requires material type + color match (color selected: ${this.selectedColor})`);
+                                } else {
+                                    filterReasons.push(`⚠️ EXEMPTION: Cap item - material type matches but no color selected`);
+                                }
+                            }
+                            
                             if (this.selectedStyle) {
                                 let styleFound = false;
                                 
@@ -779,6 +2141,7 @@ class FencePOS {
                                     selectedCategory: this.selectedCategory,
                                     selectedHeight: this.selectedHeight,
                                     selectedColor: this.selectedColor,
+                                    selectedRailType: this.selectedRailType,
                                     selectedStyle: this.selectedStyle
                                 },
                                 filterReasons: filterReasons
@@ -798,15 +2161,16 @@ class FencePOS {
             
             console.log('Enhanced sellable items found after filtering:', sellableItems.length);
             
-            // Get prices based on customer's price list
+            // Get prices based on customer's price list - SMART FALLBACK
             const itemsWithPrices = await Promise.all(sellableItems.map(async (item) => {
-                let price = item.standard_rate || 0.00;
+                let price = 0.00; // Start with 0 - only use price list
+                let usedPriceList = null;
                 
                 try {
-                    // Use customer's default price list if available
-                    const customerPriceList = this.selectedCustomer?.defaultPriceList || this.currentPriceList;
+                    // Try customer's default price list first, then current price list, then fallback to Contractor
+                    const customerPriceList = this.selectedCustomer?.defaultPriceList || this.currentPriceList || 'Contractor';
                     
-                    const priceResponse = await frappe.call({
+                    let priceResponse = await frappe.call({
                         method: 'frappe.client.get_list',
                         args: {
                             doctype: 'Item Price',
@@ -821,9 +2185,46 @@ class FencePOS {
                     
                     if (priceResponse.message && priceResponse.message.length > 0) {
                         price = priceResponse.message[0].price_list_rate;
+                        usedPriceList = customerPriceList;
                         console.log(`📈 Price from ${customerPriceList} for`, item.item_code, ':', price);
                     } else {
-                        console.log('📊 Using standard rate for', item.item_code, ':', price);
+                        // Smart fallback: try to find price in any available price list
+                        console.log(`⚠️ No price in ${customerPriceList} for ${item.item_code}, trying fallback price lists...`);
+                        
+                        // Get actual price lists from the system (no hardcoded fake ones)
+                        const fallbackPriceLists = this.priceLists.map(pl => pl.name);
+                        
+                        for (const fallbackPriceList of fallbackPriceLists) {
+                            if (fallbackPriceList === customerPriceList) continue; // Already tried
+                            
+                            try {
+                                priceResponse = await frappe.call({
+                                    method: 'frappe.client.get_list',
+                                    args: {
+                                        doctype: 'Item Price',
+                                        filters: { 
+                                            item_code: item.item_code,
+                                            price_list: fallbackPriceList
+                                        },
+                                        fields: ['price_list_rate'],
+                                        limit: 1
+                                    }
+                                });
+                                
+                                if (priceResponse.message && priceResponse.message.length > 0) {
+                                    price = priceResponse.message[0].price_list_rate;
+                                    usedPriceList = fallbackPriceList;
+                                    console.log(`✅ Found fallback price in ${fallbackPriceList} for ${item.item_code}:`, price);
+                                    break;
+                                }
+                            } catch (fallbackError) {
+                                console.log(`❌ Error checking ${fallbackPriceList} for ${item.item_code}:`, fallbackError);
+                            }
+                        }
+                        
+                        if (!usedPriceList) {
+                            console.log(`❌ No price found in any price list for ${item.item_code} - item will be excluded`);
+                        }
                     }
                 } catch (priceError) {
                     console.log('Could not get price list rate for item:', item.item_code, priceError);
@@ -861,52 +2262,260 @@ class FencePOS {
         }
     }
     
-    displayRealProducts(products) {
+    async getExemptedHardwareAndCapItems() {
+        try {
+            console.log('🔍 Starting exemption check for Hardware/Cap items...');
+            console.log('🔍 Selected category:', this.selectedCategory);
+            
+            // Get Hardware items for the selected material type
+            const hardwareResponse = await frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'Website Item',
+                    filters: {
+                        published: 1
+                    },
+                    fields: ['name', 'item_code', 'web_item_name', 'website_image', 'route']
+                }
+            });
+            
+            if (!hardwareResponse.message) {
+                console.log('❌ No Website Items found');
+                return [];
+            }
+            
+            console.log(`🔍 Found ${hardwareResponse.message.length} Website Items to check for exemptions`);
+            
+            const exemptedItems = [];
+            let checkedCount = 0;
+            
+            // Check each website item for exemption criteria
+            for (const websiteItem of hardwareResponse.message) {
+                try {
+                    const itemResponse = await frappe.call({
+                        method: 'frappe.client.get_value',
+                        args: {
+                            doctype: 'Item',
+                            filters: { item_code: websiteItem.item_code },
+                            fieldname: ['is_sales_item', 'has_variants', 'disabled', 'custom_material_type', 'custom_material_class', 'standard_rate']
+                        }
+                    });
+                    
+                    const itemData = itemResponse.message;
+                    if (!itemData || itemData.disabled === 1 || itemData.has_variants === 1 || itemData.is_sales_item !== 1) {
+                        checkedCount++;
+                        continue;
+                    }
+                    
+                    const materialClass = (itemData.custom_material_class || '').toLowerCase();
+                    const materialType = (itemData.custom_material_type || '').toLowerCase();
+                    const selectedMaterialType = (this.selectedCategory || '').toLowerCase();
+                    
+                    checkedCount++;
+                    
+                    // Debug: Log every 10th item to see what we're finding
+                    if (checkedCount % 10 === 0) {
+                        console.log(`🔍 Checked ${checkedCount} items. Current: ${websiteItem.item_code} - Class: "${materialClass}", Type: "${materialType}"`);
+                    }
+                    
+                    // EXEMPTION 1: Hardware items - show if material type matches
+                    if (materialClass === 'hardware' && materialType === selectedMaterialType) {
+                        exemptedItems.push({
+                            ...websiteItem,
+                            custom_material_class: 'Hardware',
+                            material_class: 'Hardware',
+                            price_list_rate: 0, // Will be set from price list lookup later
+                            isExempted: true,
+                            exemptionReason: 'Hardware exemption'
+                        });
+                        console.log(`🔧 HARDWARE EXEMPTION: ${websiteItem.item_code} - included for material type match`);
+                    }
+                    
+                    // EXEMPTION 2: Cap items - show if material type matches (color checked during filtering)
+                    if (materialClass === 'cap' && materialType === selectedMaterialType) {
+                        // For caps, we'll include them but they'll be filtered by color later if color is selected
+                        if (!this.selectedColor || websiteItem.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase())) {
+                            exemptedItems.push({
+                                ...websiteItem,
+                                custom_material_class: 'Cap',
+                                material_class: 'Cap',
+                                price_list_rate: 0, // Will be set from price list lookup later
+                                isExempted: true,
+                                exemptionReason: 'Cap exemption'
+                            });
+                            console.log(`🧢 CAP EXEMPTION: ${websiteItem.item_code} - included for material type + color match`);
+                        }
+                    }
+                    
+                } catch (itemError) {
+                    console.log('Could not check exemption for item:', websiteItem.item_code, itemError);
+                }
+            }
+            
+            console.log(`🔍 Finished checking ${checkedCount} items. Found ${exemptedItems.length} exempted items.`);
+            
+            // If we didn't find any exempted items, let's try a more direct approach
+            if (exemptedItems.length === 0) {
+                console.log('🔍 Trying direct search for Hardware/Cap items...');
+                
+                try {
+                    // Direct search for Hardware items
+                    const hardwareDirectResponse = await frappe.call({
+                        method: 'frappe.client.get_list',
+                        args: {
+                            doctype: 'Item',
+                            filters: {
+                                custom_material_class: 'Hardware',
+                                custom_material_type: this.selectedCategory,
+                                is_sales_item: 1,
+                                has_variants: 0,
+                                disabled: 0
+                            },
+                            fields: ['item_code', 'item_name', 'standard_rate', 'custom_material_class', 'custom_material_type']
+                        }
+                    });
+                    
+                    console.log(`🔍 Direct Hardware search found: ${hardwareDirectResponse.message?.length || 0} items`);
+                    
+                    // Direct search for Cap items
+                    const capDirectResponse = await frappe.call({
+                        method: 'frappe.client.get_list',
+                        args: {
+                            doctype: 'Item',
+                            filters: {
+                                custom_material_class: 'Cap',
+                                custom_material_type: this.selectedCategory,
+                                is_sales_item: 1,
+                                has_variants: 0,
+                                disabled: 0
+                            },
+                            fields: ['item_code', 'item_name', 'standard_rate', 'custom_material_class', 'custom_material_type']
+                        }
+                    });
+                    
+                    console.log(`🔍 Direct Cap search found: ${capDirectResponse.message?.length || 0} items`);
+                    
+                    // Get Website Items for these Hardware/Cap items
+                    const allHardwareCapCodes = [
+                        ...(hardwareDirectResponse.message || []).map(item => item.item_code),
+                        ...(capDirectResponse.message || []).map(item => item.item_code)
+                    ];
+                    
+                    if (allHardwareCapCodes.length > 0) {
+                        console.log(`🔍 Looking for Website Items for: ${allHardwareCapCodes.join(', ')}`);
+                        
+                        const websiteItemsResponse = await frappe.call({
+                            method: 'frappe.client.get_list',
+                            args: {
+                                doctype: 'Website Item',
+                                filters: {
+                                    item_code: ['in', allHardwareCapCodes],
+                                    published: 1
+                                },
+                                fields: ['name', 'item_code', 'web_item_name', 'website_image', 'route']
+                            }
+                        });
+                        
+                        console.log(`🔍 Found ${websiteItemsResponse.message?.length || 0} Website Items for Hardware/Cap items`);
+                        
+                        // Add these to exempted items
+                        for (const websiteItem of (websiteItemsResponse.message || [])) {
+                            const itemData = [...(hardwareDirectResponse.message || []), ...(capDirectResponse.message || [])]
+                                .find(item => item.item_code === websiteItem.item_code);
+                            
+                            if (itemData) {
+                                const isCap = itemData.custom_material_class === 'Cap';
+                                const shouldInclude = !isCap || !this.selectedColor || 
+                                    websiteItem.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase());
+                                
+                                if (shouldInclude) {
+                                    exemptedItems.push({
+                                        ...websiteItem,
+                                        custom_material_class: itemData.custom_material_class,
+                                        material_class: itemData.custom_material_class,
+                                        price_list_rate: 0, // Will be set from price list lookup later
+                                        isExempted: true,
+                                        exemptionReason: `${itemData.custom_material_class} exemption (direct search)`
+                                    });
+                                    console.log(`🔧 DIRECT ${itemData.custom_material_class.toUpperCase()} EXEMPTION: ${websiteItem.item_code}`);
+                                }
+                            }
+                        }
+                    }
+                    
+                } catch (directError) {
+                    console.error('Error in direct Hardware/Cap search:', directError);
+                }
+            }
+            
+            return exemptedItems;
+            
+        } catch (error) {
+            console.error('Error getting exempted Hardware/Cap items:', error);
+            return [];
+        }
+    }
+    
+    async displayRealProducts(products) {
         const container = document.getElementById('componentsContainer');
         if (!container) return;
         
-        // Group products by component type if possible
-        const sections = ['Panels', 'Posts', 'Gates', 'Caps', 'Hardware'];
+        // Debug: Check what fields are available
+        console.log('🔍 Sample product structure:', products[0]);
+        console.log('🔍 Product material classes:', products.map(p => p.custom_material_class || p.material_class || 'undefined'));
+        
+        // Hardware and Caps are now included in the main API response
+        let allProducts = [...products];
+        
+        // Enhanced grouping using attributes for sub-segmentation
+        console.log('🔍 Analyzing products for attribute-based sub-segmentation...');
+        
+        // First, get all available attributes from products
+        const allAttributes = {};
+        allProducts.forEach(product => {
+            if (product.attributes) {
+                Object.entries(product.attributes).forEach(([attrName, attrValue]) => {
+                    if (!allAttributes[attrName]) {
+                        allAttributes[attrName] = new Set();
+                    }
+                    allAttributes[attrName].add(attrValue);
+                });
+            }
+        });
+        
+        console.log('📋 Available attributes for sub-segmentation:', Object.keys(allAttributes));
+        console.log('📋 Attribute values:', Object.fromEntries(
+            Object.entries(allAttributes).map(([k, v]) => [k, Array.from(v)])
+        ));
+        
+        // Create intelligent sections based on attributes and material class
+        const sections = this.createAttributeBasedSections(allProducts, allAttributes);
+        console.log('📊 Creating attribute-based sections:', sections);
         let html = '';
         
         sections.forEach((section, index) => {
             const sectionClass = (index === 1 || index === 3) ? 'component-section light-blue' : 'component-section';
+            const sectionId = section.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
             
             html += `
                 <div class="${sectionClass}">
-                    <div class="component-header">${section.toUpperCase()}</div>
-                    <div class="component-grid" id="${section.toLowerCase()}Grid">
+                    <div class="component-header">${section.name.toUpperCase()}</div>
+                    <div class="component-grid" id="${sectionId}Grid">
             `;
             
-            // Filter products for this section with better logic
-            const sectionProducts = products.filter(product => {
-                const name = product.name.toLowerCase();
-                const itemName = product.item_name.toLowerCase();
-                
-                // Smart filtering by section
-                switch(section.toLowerCase()) {
-                    case 'panels':
-                        return name.includes('panel') || itemName.includes('panel') || 
-                               name.includes('picket') || itemName.includes('picket');
-                    case 'posts':
-                        return name.includes('post') || itemName.includes('post');
-                    case 'gates':
-                        return name.includes('gate') || itemName.includes('gate');
-                    case 'caps':
-                        return name.includes('cap') || itemName.includes('cap');
-                    case 'hardware':
-                        return name.includes('hinge') || itemName.includes('hinge') ||
-                               name.includes('latch') || itemName.includes('latch') ||
-                               name.includes('hardware') || itemName.includes('hardware');
-                    default:
-                        return false;
-                }
-            }).slice(0, 6);
+            // Use the products from the section object
+            const sectionProducts = section.products.slice(0, 6);
+            
+            console.log(`📦 Section "${section.name}": ${sectionProducts.length} products found`);
             
             if (sectionProducts.length > 0) {
                 sectionProducts.forEach(product => {
                     try {
-                        const price = product.price_list_rate || product.standard_rate || 0.00;
+                        const price = product.price_list_rate || product.pos_price || 0.00; // Use price_list_rate first, fallback to pos_price
+                        console.log(`🔥 PRICING DEBUG - Product: ${product.name}, price_list_rate: ${product.price_list_rate}, pos_price: ${product.pos_price}, final price: ${price}`);
+                        
+                        // CRITICAL FIX: Ensure the product object has the correct price for display
+                        product.price_list_rate = price;
                         // Use the original product name as unique ID
                         const productId = product.name || `product-${Math.random().toString(36).substr(2, 9)}`;
                         // Ensure item name is safe for display
@@ -1003,12 +2612,15 @@ class FencePOS {
             bundleCount
         });
         
+        // Get appropriate fallback icon based on item name/type
+        const fallbackIcon = this.getItemFallbackIcon(itemName, isBundleItem);
+        
         return `
             <div class="item-card ${isBundleItem ? 'bundle-card' : ''}" data-item-id="${safeItemId}" data-item-name="${safeItemName}" data-price="${price}" id="${cardId}">
                 <div class="item-image">
                     ${image ? 
-                        `<img src="${image}" alt="${displayItemName}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none'; this.parentNode.innerHTML='${isBundleItem ? '📦' : '📦'}';">` : 
-                        (isBundleItem ? '📦' : '📦')
+                        `<img src="${image}" alt="${displayItemName}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none'; this.parentNode.innerHTML='${fallbackIcon}';">` : 
+                        fallbackIcon
                     }
                     ${isBundleItem ? `
                         <div class="bundle-badge" style="position: absolute; top: 4px; right: 4px; background: #007bff; color: white; border-radius: 10px; padding: 2px 6px; font-size: 10px; font-weight: bold;">
@@ -1037,25 +2649,20 @@ class FencePOS {
     
 
     
-    async updateItemQuantity(encodedItemId, delta, encodedItemName, price) {
+    async updateItemQuantity(encodedItemId, targetQty, encodedItemName, price) {
         // Decode the parameters
         const itemId = decodeURIComponent(encodedItemId);
         const itemName = decodeURIComponent(encodedItemName);
         
-        console.log('Raw parameters received:', { encodedItemId, delta, encodedItemName, price });
-        console.log('Decoded parameters:', { itemId, delta, itemName, price });
+        console.log('Raw parameters received:', { encodedItemId, targetQty, encodedItemName, price });
+        console.log('Decoded parameters:', { itemId, targetQty, itemName, price });
         
         try {
-            // All items are real items from the database
-            console.log('Updating real item:', itemId, 'delta:', delta);
+            // Always use POS-specific API to ensure price list is respected
+            console.log(`🛒 Using POS API to add/update item ${itemId} with quantity ${targetQty} and price list ${this.currentPriceList}`);
+            await this.addToWebshopCart(itemId, itemName, price, targetQty);
             
-            if (delta > 0) {
-                console.log('Adding real item to webshop cart:', itemId);
-                await this.addToWebshopCart(itemId, itemName, price, 1);
-            } else {
-                console.log('Removing real item from webshop cart:', itemId);
-                await this.removeFromWebshopCart(itemId, 1);
-            }
+            console.log(`✅ Updated ${itemId} to quantity ${targetQty}`);
             
             // Update UI
             await this.updateCartDisplay();
@@ -1078,20 +2685,39 @@ class FencePOS {
     
 
     
+    async getCurrentCart() {
+        try {
+            const response = await frappe.call({
+                method: 'webshop.webshop.shopping_cart.cart.get_cart_quotation'
+            });
+            return response.message?.doc;
+        } catch (error) {
+            console.error('Error getting current cart:', error);
+            return null;
+        }
+    }
+
     async addToWebshopCart(itemCode, itemName, price, qty) {
         try {
             // Check if the item is a product bundle first
             const bundleInfo = await this.checkIfProductBundle(itemCode);
             
-            // Use the correct webshop cart API - update_cart
+            // Use POS-specific cart API that handles price list correctly
             const response = await frappe.call({
-                method: 'webshop.webshop.shopping_cart.cart.update_cart',
+                method: 'webshop.pos_api.add_item_to_cart_with_price_list',
                 args: {
                     item_code: itemCode,
                     qty: qty,
-                    with_items: 1
+                    price_list: this.currentPriceList
                 }
             });
+            
+            // The new API handles price list setting internally, but let's verify
+            if (this.currentPriceList) {
+                console.log(`🏷️ Item added with POS price list: ${this.currentPriceList}`);
+            } else {
+                console.log(`⚠️ No price list selected - item added with default pricing`);
+            }
             
             console.log('✅ Successfully added to cart:', {
                 item: itemCode,
@@ -1253,6 +2879,10 @@ class FencePOS {
             const cartDoc = response.message?.doc;
             const cartItems = cartDoc?.items || [];
             
+            // Note: Cart price list may differ from POS price list
+            // POS maintains its own price list setting (Standard Selling by default)
+            // Cart pricing will be updated when user explicitly changes POS price list
+            
             if (cartItems.length > 0) {
                 console.log('Displaying webshop cart with', cartItems.length, 'items');
                 console.log('Cart items details:', cartItems);
@@ -1299,14 +2929,24 @@ class FencePOS {
             
             // Use bundle items directly from whitelisted API response, or fallback to cart data
             let bundleItems = bundleInfo.bundleItems || [];
+            let isBundle = bundleInfo.isBundle;
+            
             if (bundleInfo.isBundle && bundleItems.length === 0) {
                 // Fallback: Look for packed_items in the cart response
                 bundleItems = this.getBundleItemsFromCart(item.item_code);
+            } else if (!bundleInfo.isBundle) {
+                // Check if this item has packed_items anyway (might be a bundle without Product Bundle record)
+                const packedItems = this.getBundleItemsFromCart(item.item_code);
+                if (packedItems.length > 0) {
+                    console.log(`📦 Detected bundle from packed_items: ${item.item_code} has ${packedItems.length} components`);
+                    isBundle = true;
+                    bundleItems = packedItems;
+                }
             }
             
             const itemWithBundle = {
                 ...item,
-                isBundle: bundleInfo.isBundle,
+                isBundle: isBundle,
                 bundleItems: bundleItems
             };
             itemsWithBundleInfo.push(itemWithBundle);
@@ -1440,10 +3080,17 @@ class FencePOS {
                         </div>
                         <div class="cart-item-price">$${item.rate.toFixed(2)} each</div>
                     </div>
-                    <div class="cart-item-qty">
-                        <div class="qty-btn cart-minus-btn" data-action="decrease">-</div>
-                        <span>${item.qty}</span>
-                        <div class="qty-btn cart-plus-btn" data-action="increase">+</div>
+                    <div class="cart-item-controls">
+                        <div class="cart-item-qty">
+                            <div class="qty-btn cart-minus-btn" data-action="decrease">-</div>
+                            <span>${item.qty}</span>
+                            <div class="qty-btn cart-plus-btn" data-action="increase">+</div>
+                        </div>
+                        <button class="cart-delete-btn" title="Remove item from cart" onclick="window.fencePOS.removeCartItem('${item.item_code.replace(/'/g, "\\'")}')" style="background: #f8f9fa; color: #6c757d; border: 1px solid #dee2e6; border-radius: 4px; padding: 6px 8px; margin-left: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle;">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                        </button>
                     </div>
                     <div style="color: #E74C3C; font-weight: 500;">$${lineTotal.toFixed(2)}</div>
                 </div>
@@ -1460,7 +3107,9 @@ class FencePOS {
                 `;
                 
                 item.bundleItems.forEach((bundleItem, index) => {
-                    const bundleQty = (bundleItem.qty || 1) * item.qty;
+                    // Show the per-bundle quantity, not the total calculated quantity
+                    const perBundleQty = bundleItem.qty || 1;
+                    const totalQty = perBundleQty * item.qty;
                     const componentId = `bundle-${item.item_code}-${bundleItem.item_code}`.replace(/[^a-zA-Z0-9-_]/g, '');
                     html += `
                         <div class="bundle-item-row" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; ${index > 0 ? 'border-top: 1px solid #e9ecef;' : ''} font-size: 12px;">
@@ -1469,22 +3118,25 @@ class FencePOS {
                                     ${bundleItem.item_name || bundleItem.item_code}
                                 </span>
                                 ${bundleItem.description ? `<div style="color: #6c757d; font-size: 11px; margin-top: 2px;">${bundleItem.description}</div>` : ''}
+                                <div style="color: #6c757d; font-size: 10px; margin-top: 2px;">
+                                    Total: ${totalQty} ${bundleItem.uom || 'Unit'}${totalQty > 1 ? 's' : ''} (${perBundleQty} per bundle × ${item.qty} bundles)
+                                </div>
                             </div>
                             <div class="bundle-item-controls" style="display: flex; align-items: center; margin-left: 10px; gap: 8px;">
                                 <div class="bundle-qty-controls" style="display: flex; align-items: center; background: white; border: 1px solid #dee2e6; border-radius: 4px;">
                                     <button class="bundle-qty-btn minus-btn" 
-                                            onclick="pos.updateBundleItemQuantity('${item.item_code}', '${bundleItem.item_code}', -1)"
+                                            onclick="window.fencePOS.updateBundleItemQuantity('${item.item_code}', '${bundleItem.item_code}', -1)"
                                             style="background: none; border: none; color: #6c757d; padding: 2px 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;"
-                                            ${bundleQty <= 1 ? 'disabled' : ''}>−</button>
+                                            ${perBundleQty <= 1 ? 'disabled' : ''}>−</button>
                                     <span class="bundle-qty-display" id="${componentId}-qty" 
                                           style="padding: 2px 6px; color: #007bff; font-weight: 500; min-width: 20px; text-align: center; font-size: 11px;">
-                                        ${bundleQty}
+                                        ${perBundleQty}
                                     </span>
                                     <button class="bundle-qty-btn plus-btn" 
-                                            onclick="pos.updateBundleItemQuantity('${item.item_code}', '${bundleItem.item_code}', 1)"
+                                            onclick="window.fencePOS.updateBundleItemQuantity('${item.item_code}', '${bundleItem.item_code}', 1)"
                                             style="background: none; border: none; color: #6c757d; padding: 2px 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;">+</button>
                                 </div>
-                                <span style="color: #6c757d; font-size: 10px;">${bundleItem.uom || 'Unit'}${bundleQty > 1 ? 's' : ''}</span>
+                                <span style="color: #6c757d; font-size: 10px;">per bundle</span>
                             </div>
                 </div>
             `;
@@ -1519,7 +3171,7 @@ class FencePOS {
                                 <div class="bundle-item-controls" style="display: flex; align-items: center; margin-left: 10px; gap: 8px;">
                                     <div class="bundle-qty-controls" style="display: flex; align-items: center; background: white; border: 1px solid #dee2e6; border-radius: 4px;">
                                         <button class="bundle-qty-btn minus-btn" 
-                                                onclick="pos.updateBundleItemQuantity('${item.item_code}', '${packedItem.item_code}', -1)"
+                                                onclick="window.fencePOS.updateBundleItemQuantity('${item.item_code}', '${packedItem.item_code}', -1)"
                                                 style="background: none; border: none; color: #6c757d; padding: 2px 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;"
                                                 ${packedItem.qty <= 1 ? 'disabled' : ''}>−</button>
                                         <span class="bundle-qty-display" id="${componentId}-qty" 
@@ -1527,7 +3179,7 @@ class FencePOS {
                                             ${packedItem.qty}
                                         </span>
                                         <button class="bundle-qty-btn plus-btn" 
-                                                onclick="pos.updateBundleItemQuantity('${item.item_code}', '${packedItem.item_code}', 1)"
+                                                onclick="window.fencePOS.updateBundleItemQuantity('${item.item_code}', '${packedItem.item_code}', 1)"
                                                 style="background: none; border: none; color: #6c757d; padding: 2px 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;">+</button>
                                     </div>
                                     <span style="color: #6c757d; font-size: 10px;">${packedItem.uom || 'Unit'}${packedItem.qty > 1 ? 's' : ''}</span>
@@ -1561,18 +3213,33 @@ class FencePOS {
     
     async updateCartItemQuantity(itemCode, delta) {
         try {
+            console.log(`🔄 Updating cart item quantity: ${itemCode}, delta: ${delta}`);
+            
             // Get current cart to find current quantity
             const cartResponse = await frappe.call({
                 method: 'webshop.webshop.shopping_cart.cart.get_cart_quotation'
             });
             
-            if (cartResponse.message && cartResponse.message.items) {
-                const item = cartResponse.message.items.find(i => i.item_code === itemCode);
+            console.log('📋 Cart response:', cartResponse);
+            console.log('📋 Cart response.message:', cartResponse.message);
+            console.log('📋 Cart response.message.items:', cartResponse.message?.items);
+            console.log('📋 Cart response.message.doc:', cartResponse.message?.doc);
+            console.log('📋 Cart response.message.doc.items:', cartResponse.message?.doc?.items);
+            
+            // Try both possible locations for items
+            const cartItems = cartResponse.message?.items || cartResponse.message?.doc?.items;
+            console.log('📋 Final cart items array:', cartItems);
+            
+            if (cartResponse.message && cartItems) {
+                const item = cartItems.find(i => i.item_code === itemCode);
+                console.log('🔍 Found item in cart:', item);
+                
                 if (item) {
                     const newQty = Math.max(0, item.qty + delta);
+                    console.log(`📊 Current qty: ${item.qty}, Delta: ${delta}, New qty: ${newQty}`);
                     
                     // Update cart with new quantity
-                    await frappe.call({
+                    const updateResponse = await frappe.call({
                         method: 'webshop.webshop.shopping_cart.cart.update_cart',
                         args: {
                             item_code: itemCode,
@@ -1581,12 +3248,50 @@ class FencePOS {
                         }
                     });
                     
+                    console.log('✅ Update response:', updateResponse);
+                    
                     // Refresh cart display
                     await this.updateCartDisplay();
+                    console.log('🔄 Cart display refreshed');
+                } else {
+                    console.error('❌ Item not found in cart:', itemCode);
                 }
+            } else {
+                console.error('❌ No cart items found');
             }
         } catch (error) {
-            console.error('Error updating cart item quantity:', error);
+            console.error('❌ Error updating cart item quantity:', error);
+        }
+    }
+
+    async removeCartItem(itemCode) {
+        try {
+            console.log(`🗑️ Removing cart item: ${itemCode}`);
+            
+            // Ask for confirmation
+            if (!confirm('Are you sure you want to remove this item from the cart?')) {
+                return;
+            }
+            
+            // Set quantity to 0 to remove the item
+            await frappe.call({
+                method: 'webshop.webshop.shopping_cart.cart.update_cart',
+                args: {
+                    item_code: itemCode,
+                    qty: 0,
+                    with_items: 1
+                }
+            });
+            
+            console.log(`✅ Removed ${itemCode} from cart`);
+            
+            // Refresh cart display
+            await this.updateCartDisplay();
+            this.showNotification('✅ Item removed from cart', 'success');
+            
+        } catch (error) {
+            console.error('❌ Error removing cart item:', error);
+            this.showNotification('❌ Failed to remove item from cart', 'error');
         }
     }
     
@@ -1998,6 +3703,7 @@ class FencePOS {
                     selectedStyle: this.selectedStyle,
                     selectedHeight: this.selectedHeight,
                     selectedColor: this.selectedColor,
+                    selectedRailType: this.selectedRailType,
                     selectedCustomer: this.selectedCustomer
                 };
                 
@@ -2050,7 +3756,7 @@ class FencePOS {
                     location: '', // Could be added to POS interface later
                     delivery_address: '', // Could be added to POS interface later
                     taxes_and_charges: 'Standard Sales Tax', // Default tax template
-                    notes: `Created from POS - Material: ${this.selectedCategory}, Style: ${this.selectedStyle}, Height: ${this.selectedHeight}, Color: ${this.selectedColor}`,
+                    notes: `Created from POS - Material: ${this.selectedCategory}, Style: ${this.selectedStyle}, Height: ${this.selectedHeight}, Color: ${this.selectedColor}, Rail Type: ${this.selectedRailType}`,
                 item: items.map(item => ({
                     item_code: item.item_code,
                     item_name: item.item_name,
@@ -2155,6 +3861,7 @@ class FencePOS {
                 fence_style: this.selectedStyle,
                 fence_height: this.selectedHeight,
                 fence_color: this.selectedColor,
+                fence_rail_type: this.selectedRailType,
                 fulfillment_method: this.fulfillmentMethod,
                 schedule_type: this.scheduleType,
                 delivery_date: this.selectedDate,
@@ -2282,6 +3989,7 @@ class FencePOS {
                 fence_style: this.selectedStyle,
                 fence_height: this.selectedHeight,
                 fence_color: this.selectedColor,
+                fence_rail_type: this.selectedRailType,
                 status: 'Draft'
                 }
             };
@@ -2405,16 +4113,109 @@ class FencePOS {
         }
     }
     
+    async clearCartOnSessionStart() {
+        try {
+            console.log('🧹 Clearing cart on POS session start...');
+            
+            // Try to get current cart, but handle cases where no cart exists
+            let cartResponse;
+            try {
+                cartResponse = await frappe.call({
+                    method: 'webshop.webshop.shopping_cart.cart.get_cart_quotation'
+                });
+            } catch (getCartError) {
+                console.log('📝 No existing cart found on session start - starting fresh');
+                return;
+            }
+            
+            const cartDoc = cartResponse.message?.doc;
+            const cartItems = cartDoc?.items || [];
+            
+            if (cartItems.length === 0) {
+                console.log('✅ Cart was already empty on session start');
+                return;
+            }
+            
+            console.log(`🔄 Clearing ${cartItems.length} items from previous session...`);
+            
+            // Use a more robust approach - try to clear the entire cart at once first
+            try {
+                await frappe.call({
+                    method: 'webshop.webshop.shopping_cart.cart.update_cart',
+                    args: {
+                        item_code: cartItems[0].item_code,
+                        qty: 0,
+                        with_items: 1
+                    }
+                });
+                
+                // Check if cart is now empty
+                const checkResponse = await frappe.call({
+                    method: 'webshop.webshop.shopping_cart.cart.get_cart_quotation'
+                });
+                
+                const remainingItems = checkResponse.message?.doc?.items || [];
+                if (remainingItems.length === 0) {
+                    console.log('✅ Cart cleared successfully on session start');
+                    return;
+                }
+            } catch (bulkClearError) {
+                console.log('⚠️ Bulk clear failed, trying individual item clearing...');
+            }
+            
+            // Fallback: Clear items individually, but with better error handling
+            let clearedCount = 0;
+            for (const item of cartItems) {
+                try {
+                    await frappe.call({
+                        method: 'webshop.webshop.shopping_cart.cart.update_cart',
+                        args: {
+                            item_code: item.item_code,
+                            qty: 0
+                        }
+                    });
+                    clearedCount++;
+                } catch (itemError) {
+                    console.log(`⚠️ Could not clear item: ${item.item_code}`, itemError);
+                    // Continue with other items even if one fails
+                }
+            }
+            
+            console.log(`✅ Cart clearing completed - cleared ${clearedCount}/${cartItems.length} items`);
+            
+        } catch (error) {
+            console.log('⚠️ Cart clearing encountered issues but POS will continue:', error);
+            // Don't throw error - just log it and continue with POS initialization
+        }
+    }
+    
     async clearCart() {
         try {
-            // Clear webshop cart by setting all items to 0 quantity
+            // Check if cart has items first
             const cartResponse = await frappe.call({
                 method: 'webshop.webshop.shopping_cart.cart.get_cart_quotation'
             });
             
-            if (cartResponse.message && cartResponse.message.items) {
+            const cartDoc = cartResponse.message?.doc;
+            const cartItems = cartDoc?.items || [];
+            
+            if (cartItems.length === 0) {
+                this.showNotification('Cart is already empty', 'info');
+                return;
+            }
+            
+            // Ask for confirmation
+            if (!confirm(`Are you sure you want to clear the cart? This will remove ${cartItems.length} item(s) and refresh the POS.`)) {
+                return;
+            }
+            
+            // Show loading state
+            this.showNotification('Clearing cart and refreshing...', 'loading');
+            
+            // Clear webshop cart by setting all items to 0 quantity
+            if (cartDoc && cartItems.length > 0) {
                 // Set each item quantity to 0
-                for (const item of cartResponse.message.items) {
+                for (const item of cartItems) {
                     try {
                         await frappe.call({
                             method: 'webshop.webshop.shopping_cart.cart.update_cart',
@@ -2430,10 +4231,71 @@ class FencePOS {
             }
             
             console.log('Webshop cart cleared successfully');
+            this.showNotification('✅ Cart cleared! Refreshing POS...', 'success');
+            
+            // Hard refresh after successful cart clear to clear cache
+            setTimeout(() => {
+                window.location.reload(true);
+            }, 1000);
+            
         } catch (error) {
             console.error('Could not clear webshop cart:', error);
+            this.showNotification('❌ Failed to clear cart. Please try again.', 'error');
             throw new Error('Failed to clear cart');
         }
+    }
+    
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'cart-notification';
+        notification.innerHTML = message;
+        
+        // Set styles based on type
+        let backgroundColor = '#17a2b8'; // info
+        if (type === 'success') backgroundColor = '#28a745';
+        if (type === 'error') backgroundColor = '#dc3545';
+        if (type === 'loading') backgroundColor = '#ffc107';
+        
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${backgroundColor};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            z-index: 9999;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateX(300px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
+        setTimeout(() => {
+            notification.style.transform = 'translateX(0)';
+            notification.style.opacity = '1';
+        }, 10);
+        
+        // Auto-remove after delay (except loading)
+        if (type !== 'loading') {
+            setTimeout(() => {
+                notification.style.transform = 'translateX(300px)';
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+        
+        return notification;
     }
     
     resetOrderOptions() {
@@ -2538,30 +4400,43 @@ class FencePOS {
         customerList.innerHTML = html;
     }
     
-    selectCustomer(customerId, customerName, customerGroup, defaultPriceList) {
-        // Use customer's default price list or fallback to Standard Selling
-        const priceListToUse = defaultPriceList || 'Standard Selling';
-        
+    async selectCustomer(customerId, customerName, customerGroup, defaultPriceList) {
+        // Store customer's default price list but don't automatically apply it
         this.selectedCustomer = {
             id: customerId,
             name: customerName,
             group: customerGroup,
-            defaultPriceList: priceListToUse
+            defaultPriceList: defaultPriceList
         };
         
         // Update display
         document.getElementById('customerName').textContent = customerName;
         document.getElementById('customerType').textContent = customerGroup;
-        document.getElementById('priceListName').textContent = priceListToUse;
         
-        // Update current price list to customer's default or Standard Selling
-        this.currentPriceList = priceListToUse;
-        
-        console.log(`🏷️ Customer selected: ${customerName}, Price List: ${priceListToUse}`);
+        // Only set price list if user hasn't already selected one
+        if (!this.currentPriceList && defaultPriceList) {
+            this.currentPriceList = defaultPriceList;
+            
+            // Update price list selector dropdown
+            const priceListSelector = document.getElementById('priceListSelector');
+            if (priceListSelector) {
+                priceListSelector.value = defaultPriceList;
+            }
+            
+            console.log(`🏷️ Customer selected: ${customerName}, Auto-applied default Price List: ${defaultPriceList}`);
+        } else {
+            console.log(`🏷️ Customer selected: ${customerName}, Keeping current Price List: ${this.currentPriceList || 'none'}`);
+        }
         
         // Refresh component prices if on component view to apply new pricing
         if (this.currentView === 'component') {
             this.loadComponents();
+        }
+        
+        // Update cart pricing to match current price list (like webshop)
+        if (this.currentPriceList) {
+            await this.setCartPriceList(this.currentPriceList);
+            await this.updateCartPricing(this.currentPriceList);
         }
         
         this.closeCustomerSearch();
@@ -2601,10 +4476,7 @@ class FencePOS {
                 <div style="margin-bottom: 20px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: 500;">Default Price List</label>
                     <select id="newCustomerPriceList" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                        <option value="Standard Selling">Standard Selling</option>
-                        <option value="Wholesale Price List">Wholesale Price List</option>
-                        <option value="Contractor Price List">Contractor Price List</option>
-                        <option value="Retail Price List">Retail Price List</option>
+                        <!-- Options will be populated from actual price lists -->
                     </select>
                 </div>
                 
@@ -2762,15 +4634,40 @@ class FencePOS {
                         // Enhanced filtering for search results (material, height, color)
                         let includeItem = true;
                         
-                        // Category/Material filtering
+                        // EXEMPTIONS: Special material class handling for search results
+                        const materialClass = itemData.custom_material_class ? itemData.custom_material_class.toLowerCase() : '';
+                        const isHardware = materialClass === 'hardware';
+                        const isCap = materialClass === 'cap';
+                        
+                        // Category/Material filtering with exemptions
                         if (this.selectedCategory) {
-                            const categoryMatch = 
+                            let categoryMatch = 
                                 (itemData.custom_material_type && itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (itemData.custom_material_class && itemData.custom_material_class.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (itemData.item_group && itemData.item_group.toLowerCase() === this.selectedCategory.toLowerCase()) ||
                                 (item.web_item_name.toLowerCase().includes(this.selectedCategory.toLowerCase()));
                             
+                            // EXEMPTION 1: Hardware items - show if material type matches selected category
+                            if (isHardware && itemData.custom_material_type && 
+                                itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) {
+                                categoryMatch = true;
+                            }
+                            
+                            // EXEMPTION 2: Cap items - show if material type matches (color will be checked separately)
+                            if (isCap && itemData.custom_material_type && 
+                                itemData.custom_material_type.toLowerCase() === this.selectedCategory.toLowerCase()) {
+                                categoryMatch = true;
+                            }
+                            
                             includeItem = includeItem && categoryMatch;
+                        }
+                        
+                        // Additional filtering for Cap items - must match color when color is selected
+                        if (this.selectedColor && isCap) {
+                            const colorMatch = item.web_item_name.toLowerCase().includes(this.selectedColor.toLowerCase());
+                            if (!colorMatch) {
+                                includeItem = false;
+                            }
                         }
                         
                         // Note: Height and Color filtering for search results now handled by backend API
@@ -2788,7 +4685,12 @@ class FencePOS {
                                 filters: {
                                     selectedCategory: this.selectedCategory,
                                     selectedHeight: this.selectedHeight,
-                                    selectedColor: this.selectedColor
+                                    selectedColor: this.selectedColor,
+                                    selectedRailType: this.selectedRailType,
+                                    exemptions: {
+                                        isHardware: isHardware,
+                                        isCap: isCap
+                                    }
                                 }
                             });
                         }
@@ -3002,16 +4904,8 @@ class FencePOS {
         // For now, just prompt for quantity
         const qty = prompt(`Enter quantity for ${itemName}:`, '1');
         if (qty && parseInt(qty) > 0) {
-            // Find current quantity in product card
-            const itemCard = document.querySelector(`[data-item-id="${encodedItemId}"]`);
-            const currentQty = itemCard ? parseInt(itemCard.querySelector('.item-qty-input').value) || 0 : 0;
-            
-            // Calculate delta to reach desired quantity
-            const delta = parseInt(qty) - currentQty;
-            
-            if (delta !== 0) {
-                this.updateItemQuantity(encodedItemId, delta, encodedItemName, price);
-            }
+            // Set absolute quantity - no delta calculation needed
+            this.updateItemQuantity(encodedItemId, parseInt(qty), encodedItemName, price);
         }
     }
 
@@ -3023,7 +4917,7 @@ class FencePOS {
             console.log(`Product ${index + 1}:`, {
                 name: product.name,
                 item_name: product.item_name,
-                price: product.price_list_rate || product.standard_rate || 'No price',
+                price: product.price_list_rate || 'No price list rate',
                 image: product.website_image || 'No image',
                 route: product.route || 'No route'
             });
@@ -3036,11 +4930,11 @@ class FencePOS {
         console.log('🔍 Verifying button functionality...');
         
         const functionsToCheck = [
-            'selectCategory', 'selectStyle', 'selectHeight', 'selectColor', 'clearHeight', 'clearColor',
+            'selectCategory', 'selectStyle', 'selectHeight', 'selectColor', 'clearHeight', 'clearColor', 'selectRailType', 'clearRailType',
             'selectOrderType', 'selectFulfillment', 'selectSchedule', 'selectTime',
             'changeMonth', 'checkout', 'openCustomerSearch', 'closeCustomerSearch',
             'selectCustomer', 'switchLanguage', 'proceedToComponents',
-            'clearSearch', 'updateCartItemQuantity', 'showAddCustomerForm', 'createNewCustomer',
+            'clearSearch', 'updateCartItemQuantity', 'removeCartItem', 'changePriceList', 'showAddCustomerForm', 'createNewCustomer',
             'selectTimeFromPicker', 'selectQuickTime', 'updateBundleItemQuantity'
         ];
         
@@ -3125,10 +5019,10 @@ class FencePOS {
         const container = document.getElementById('componentsContainer');
         if (!container) return;
         
-        // Group products by category for better organization
+        // Group products by material class for better organization (same as main display)
         const categories = {};
         products.forEach(product => {
-            const category = product.category || product.material_type || 'Other';
+            const category = product.custom_material_class || product.material_class || 'Other';
             if (!categories[category]) {
                 categories[category] = [];
             }
@@ -3145,8 +5039,24 @@ class FencePOS {
             </div>
         `;
         
+        // Sort categories by material class priority (same as main display)
+        const materialClassPriority = {
+            'Panel': 1, 'Panels': 1,
+            'Rail': 2, 'Rails': 2,
+            'Post': 3, 'Posts': 3,
+            'Gate': 4, 'Gates': 4,
+            'Hardware': 5,
+            'Cap': 6, 'Caps': 6
+        };
+        
+        const sortedCategoryNames = Object.keys(categories).sort((a, b) => {
+            const priorityA = materialClassPriority[a] || 999;
+            const priorityB = materialClassPriority[b] || 999;
+            return priorityA - priorityB;
+        });
+        
         // Display items by category
-        Object.keys(categories).forEach((categoryName, index) => {
+        sortedCategoryNames.forEach((categoryName, index) => {
             const categoryProducts = categories[categoryName];
             const sectionClass = (index % 2 === 1) ? 'component-section light-blue' : 'component-section';
             
@@ -3533,6 +5443,8 @@ class FencePOS {
         }, 2000);
     }
     
+
+    
     async loadDynamicOptions() {
         try {
             console.log('🔄 Loading dynamic attribute options...');
@@ -3550,6 +5462,7 @@ class FencePOS {
                 console.log('📊 All available attributes:', attributes);
                 console.log('📊 Auto-detected height attribute:', data.height_attribute);
                 console.log('📊 Auto-detected color attribute:', data.color_attribute);
+                console.log('📊 Auto-detected rail type attribute:', data.rail_type_attribute);
                 
                 // MAINTENANCE FREE: Use dynamically detected height attribute
                 const heightGrid = document.getElementById('heightGrid');
@@ -3579,6 +5492,41 @@ class FencePOS {
                     colorGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No color options available</div>';
                 }
                 
+                // MAINTENANCE FREE: Use dynamically detected rail type attribute with style-specific logic
+                const railTypeGrid = document.getElementById('railTypeGrid');
+                let railTypeAttr = data.rail_type_attribute;
+                
+                // Style-specific attribute detection
+                if (this.selectedStyle === 'Ranch Rail' && attributes['Ranch Rail Type']) {
+                    railTypeAttr = 'Ranch Rail Type';
+                    console.log('🚜 Using Ranch Rail Type for Ranch Rail style');
+                } else if (!railTypeAttr && attributes['Rail Type']) {
+                    railTypeAttr = 'Rail Type';
+                    console.log('🛤️ Using generic Rail Type attribute');
+                }
+                
+                // Update rail type header based on style
+                const railTypeHeader = document.getElementById('railTypeHeader');
+                if (this.selectedStyle === 'Ranch Rail') {
+                    railTypeHeader.innerHTML = `Ranch Rail Type Options <button onclick="window.fencePOS.clearRailType()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Clear</button>`;
+                } else {
+                    railTypeHeader.innerHTML = `Rail Type Options <button onclick="window.fencePOS.clearRailType()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">Clear</button>`;
+                }
+                
+                if (railTypeAttr && attributes[railTypeAttr]) {
+                    const railTypeOptions = attributes[railTypeAttr].map(rt => rt.value);
+                    railTypeGrid.innerHTML = railTypeOptions.map(railType => `
+                        <div class="option-button" onclick="window.fencePOS.selectRailType('${railType.replace(/'/g, "\\'")}');event.stopPropagation();" id="railtype-${railType.replace(/\s+/g, '-')}">${railType}</div>
+                    `).join('');
+                    console.log(`✅ Loaded rail type options from "${railTypeAttr}":`, railTypeOptions);
+                } else {
+                    console.log('❌ No rail type attribute found. Available:', data.available_attributes);
+                    railTypeGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No rail type options available</div>';
+                }
+                
+                // Load new attribute types
+                this.loadNewAttributes(attributes);
+                
             } else {
                 console.warn('No dynamic attributes loaded, using fallback');
                 this.loadFallbackOptions();
@@ -3590,6 +5538,44 @@ class FencePOS {
         }
     }
     
+    loadNewAttributes(attributes) {
+        // Load Lattice Type options
+        const latticeTypeGrid = document.getElementById('latticeTypeGrid');
+        if (attributes['Lattice Type']) {
+            const latticeTypeOptions = attributes['Lattice Type'].map(lt => lt.value);
+            latticeTypeGrid.innerHTML = latticeTypeOptions.map(latticeType => `
+                <div class="option-button" onclick="window.fencePOS.selectLatticeType('${latticeType.replace(/'/g, "\\'")}');event.stopPropagation();" id="latticetype-${latticeType.replace(/\s+/g, '-')}">${latticeType}</div>
+            `).join('');
+            console.log(`✅ Loaded lattice type options:`, latticeTypeOptions);
+        } else {
+            latticeTypeGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No lattice type options available</div>';
+        }
+        
+        // Load Orientation options
+        const orientationGrid = document.getElementById('orientationGrid');
+        if (attributes['Orientation']) {
+            const orientationOptions = attributes['Orientation'].map(o => o.value);
+            orientationGrid.innerHTML = orientationOptions.map(orientation => `
+                <div class="option-button" onclick="window.fencePOS.selectOrientation('${orientation.replace(/'/g, "\\'")}');event.stopPropagation();" id="orientation-${orientation.replace(/\s+/g, '-')}">${orientation}</div>
+            `).join('');
+            console.log(`✅ Loaded orientation options:`, orientationOptions);
+        } else {
+            orientationGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No orientation options available</div>';
+        }
+        
+        // Load Picket Type options
+        const picketTypeGrid = document.getElementById('picketTypeGrid');
+        if (attributes['Picket Type']) {
+            const picketTypeOptions = attributes['Picket Type'].map(pt => pt.value);
+            picketTypeGrid.innerHTML = picketTypeOptions.map(picketType => `
+                <div class="option-button" onclick="window.fencePOS.selectPicketType('${picketType.replace(/'/g, "\\'")}');event.stopPropagation();" id="pickettype-${picketType.replace(/\s+/g, '-')}">${picketType}</div>
+            `).join('');
+            console.log(`✅ Loaded picket type options:`, picketTypeOptions);
+        } else {
+            picketTypeGrid.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No picket type options available</div>';
+        }
+    }
+
     loadFallbackOptions() {
         // Fallback to default options if dynamic loading fails
         const heightOptions = ['4\'', '5\'', '6\'', '8\''];
@@ -3697,6 +5683,213 @@ class FencePOS {
             this.showError('Failed to optimize items: ' + (error.message || 'Unknown error'));
         }
     }
+    
+    createAttributeBasedSections(products, allAttributes) {
+        const sections = [];
+        
+        // Group products by material class only (no sub-grouping by attributes)
+        const materialClassGroups = {};
+        products.forEach(product => {
+            const materialClass = product.custom_material_class || product.material_class || 'Other';
+            if (!materialClassGroups[materialClass]) {
+                materialClassGroups[materialClass] = [];
+            }
+            materialClassGroups[materialClass].push(product);
+        });
+        
+        // Create one section per material class (no attribute sub-grouping)
+        Object.entries(materialClassGroups).forEach(([materialClass, classProducts]) => {
+            console.log(`🔍 Processing material class: ${materialClass} (${classProducts.length} products)`);
+            
+            // Create single section for each material class
+            sections.push({
+                name: materialClass,
+                products: classProducts,
+                materialClass: materialClass,
+                attribute: null,
+                attributeValue: null
+            });
+            console.log(`📦 Created section: ${materialClass} (${classProducts.length} products)`);
+        });
+        
+        // Sort sections by material class priority: Panels, Rail, Posts, Gates, Hardware, Caps
+        const materialClassPriority = {
+            'Panel': 1, 'Panels': 1,
+            'Rail': 2, 'Rails': 2,
+            'Post': 3, 'Posts': 3,
+            'Gate': 4, 'Gates': 4,
+            'Hardware': 5,
+            'Cap': 6, 'Caps': 6
+        };
+        
+        const getMaterialClassPriority = (materialClass) => {
+            return materialClassPriority[materialClass] || 999;
+        };
+        
+        sections.sort((a, b) => {
+            const priorityA = getMaterialClassPriority(a.materialClass);
+            const priorityB = getMaterialClassPriority(b.materialClass);
+            
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            
+            // If same material class, sort by section name (for sub-sections like "Gate - 3'", "Gate - 4'")
+            return a.name.localeCompare(b.name);
+        });
+        
+        return sections;
+    }
+    
+    async setCartPriceList(priceList) {
+        /**
+         * Set the cart price list - overrides customer default
+         */
+        try {
+            console.log(`🏷️ Setting cart price list to: ${priceList}`);
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.set_cart_price_list',
+                args: {
+                    price_list: priceList
+                }
+            });
+            
+            console.log('Cart price list set response:', response);
+            
+            if (response && response.message) {
+                console.log(`✅ Cart price list set: ${response.message}`);
+            } else {
+                console.warn('No response received from set cart price list');
+            }
+            
+        } catch (error) {
+            console.error('Error setting cart price list:', error);
+            this.showNotification('❌ Error setting cart price list', 'error');
+        }
+    }
+    
+    async updateCartPricing(priceList) {
+        /**
+         * Update cart pricing when price list changes (like webshop)
+         */
+        try {
+            console.log(`🏷️ Updating cart pricing to price list: ${priceList}`);
+            
+            const response = await frappe.call({
+                method: 'webshop.pos_api.update_cart_pricing',
+                args: {
+                    price_list: priceList
+                }
+            });
+            
+            console.log('Cart pricing update response:', response);
+            
+            if (response) {
+                // Handle different response formats
+                let success = false;
+                let messageText = '';
+                
+                if (response.message) {
+                    if (typeof response.message === 'string') {
+                        messageText = response.message;
+                        success = messageText.includes('successfully') || messageText.includes('No cart found');
+                    } else if (typeof response.message === 'object') {
+                        // Handle object response - assume success if we got a proper response object
+                        success = true;
+                        messageText = 'Cart pricing updated successfully';
+                    }
+                } else if (response._server_messages) {
+                    // Sometimes the message is in _server_messages
+                    try {
+                        const serverMsg = JSON.parse(response._server_messages);
+                        if (Array.isArray(serverMsg) && serverMsg.length > 0) {
+                            const parsed = JSON.parse(serverMsg[0]);
+                            messageText = parsed.message || '';
+                            success = messageText.includes('successfully') || messageText.includes('updated') || messageText.includes('added');
+                        }
+                    } catch (e) {
+                        success = true; // Assume success if we can't parse but got a response
+                        messageText = 'Cart pricing updated successfully';
+                    }
+                } else {
+                    // If we get any response object, assume success
+                    success = true;
+                    messageText = 'Cart pricing updated successfully';
+                }
+                
+                if (success) {
+                    // Refresh cart display to show updated prices
+                    await this.updateCartDisplay();
+                    this.showNotification(`✅ Prices updated to ${priceList}`, 'success');
+                    console.log(`✅ Cart pricing updated to ${priceList}`);
+                } else {
+                    console.error('Cart pricing update failed:', messageText || response);
+                    this.showNotification('❌ Failed to update cart prices', 'error');
+                }
+            } else {
+                console.error('No response received for cart pricing update');
+                this.showNotification('❌ Failed to update cart prices', 'error');
+            }
+            
+        } catch (error) {
+            console.error('Error updating cart pricing:', error);
+            this.showNotification('❌ Error updating cart prices', 'error');
+        }
+    }
+    
+    async changePriceList(newPriceList) {
+        /**
+         * Change the current price list and refresh all prices (like webshop)
+         */
+        try {
+            const previousPriceList = this.currentPriceList;
+            console.log(`🔄 Changing price list from ${previousPriceList || 'none'} to ${newPriceList}`);
+            
+            // Update current price list
+            this.currentPriceList = newPriceList;
+            
+            // Update UI display
+            const priceListSelector = document.getElementById('priceListSelector');
+            if (priceListSelector) {
+                priceListSelector.value = newPriceList;
+            }
+            
+            // Set cart price list first (this overrides customer default)
+            console.log(`🏷️ Setting cart price list to: ${newPriceList}`);
+            const setPriceListResponse = await this.setCartPriceList(newPriceList);
+            console.log('Cart price list set response:', setPriceListResponse);
+            
+            // Update cart pricing if there are items in cart
+            console.log(`🏷️ Updating cart pricing to price list: ${newPriceList}`);
+            const updatePricingResponse = await this.updateCartPricing(newPriceList);
+            console.log('Cart pricing update response:', updatePricingResponse);
+            
+            // Refresh cart display to show updated prices
+            await this.updateCartDisplay();
+            
+            // Refresh product display with new prices based on current view
+            if (this.currentView === 'component' && this.selectedCategory && this.selectedStyle) {
+                await this.loadComponents();
+            } else if (this.isPopularMode || this.currentView === 'popular-material') {
+                // Refresh popular items with new price list by reloading components
+                await this.loadComponents();
+            }
+            
+            // Show notification about price list change
+            if (previousPriceList) {
+                this.showNotification(`Price list changed from ${previousPriceList} to ${newPriceList}`, 'success');
+            } else {
+                this.showNotification(`Price list set to ${newPriceList}`, 'success');
+            }
+            
+            console.log(`✅ Price list changed to ${newPriceList} and all prices refreshed`);
+            
+        } catch (error) {
+            console.error('Error changing price list:', error);
+            this.showNotification('Error updating price list', 'error');
+        }
+    }
 }
 
 // Global functions for onclick handlers - defined early to ensure availability
@@ -3709,8 +5902,56 @@ window.selectPopular = async () => {
     try { await window.fencePOS?.selectPopular(); } catch(e) { console.error('selectPopular error:', e); }
 };
 
+window.selectBundles = async () => {
+    try { await window.fencePOS?.selectBundles(); } catch(e) { console.error('selectBundles error:', e); }
+};
+
+window.clearCart = async () => {
+    try { await window.fencePOS?.clearCart(); } catch(e) { console.error('clearCart error:', e); }
+};
+
 window.selectPopularMaterial = async (materialType) => {
     try { await window.fencePOS?.selectPopularMaterial(materialType); } catch(e) { console.error('selectPopularMaterial error:', e); }
+};
+
+window.selectBundlesMaterial = async (materialType) => {
+    try { await window.fencePOS?.selectBundlesMaterial(materialType); } catch(e) { console.error('selectBundlesMaterial error:', e); }
+};
+
+window.selectTemplates = async () => {
+    try { await window.fencePOS?.selectTemplates(); } catch(e) { console.error('selectTemplates error:', e); }
+};
+
+window.showSaveTemplateModal = () => {
+    try { window.fencePOS?.showSaveTemplateModal(); } catch(e) { console.error('showSaveTemplateModal error:', e); }
+};
+
+window.closeSaveTemplateModal = () => {
+    try { window.fencePOS?.closeSaveTemplateModal(); } catch(e) { console.error('closeSaveTemplateModal error:', e); }
+};
+
+window.saveTemplate = async () => {
+    try { await window.fencePOS?.saveTemplate(); } catch(e) { console.error('saveTemplate error:', e); }
+};
+
+window.loadTemplate = async (templateName) => {
+    try { await window.fencePOS?.loadTemplate(templateName); } catch(e) { console.error('loadTemplate error:', e); }
+};
+
+window.deleteTemplate = async (templateName) => {
+    try { await window.fencePOS?.deleteTemplate(templateName); } catch(e) { console.error('deleteTemplate error:', e); }
+};
+
+window.filterTemplates = () => {
+    try { window.fencePOS?.filterTemplates(); } catch(e) { console.error('filterTemplates error:', e); }
+};
+
+window.searchTemplates = () => {
+    try { window.fencePOS?.searchTemplates(); } catch(e) { console.error('searchTemplates error:', e); }
+};
+
+window.refreshTemplates = () => {
+    try { window.fencePOS?.refreshTemplates(); } catch(e) { console.error('refreshTemplates error:', e); }
 };
 
 window.selectStyle = async (styleId) => {
@@ -3727,6 +5968,30 @@ window.clearHeight = () => {
 };
 window.clearColor = () => {
     try { window.fencePOS?.clearColor(); } catch(e) { console.error('clearColor error:', e); }
+};
+window.selectRailType = (railType) => {
+    try { window.fencePOS?.selectRailType(railType); } catch(e) { console.error('selectRailType error:', e); }
+};
+window.clearRailType = () => {
+    try { window.fencePOS?.clearRailType(); } catch(e) { console.error('clearRailType error:', e); }
+};
+window.selectLatticeType = (latticeType) => {
+    try { window.fencePOS?.selectLatticeType(latticeType); } catch(e) { console.error('selectLatticeType error:', e); }
+};
+window.clearLatticeType = () => {
+    try { window.fencePOS?.clearLatticeType(); } catch(e) { console.error('clearLatticeType error:', e); }
+};
+window.selectOrientation = (orientation) => {
+    try { window.fencePOS?.selectOrientation(orientation); } catch(e) { console.error('selectOrientation error:', e); }
+};
+window.clearOrientation = () => {
+    try { window.fencePOS?.clearOrientation(); } catch(e) { console.error('clearOrientation error:', e); }
+};
+window.selectPicketType = (picketType) => {
+    try { window.fencePOS?.selectPicketType(picketType); } catch(e) { console.error('selectPicketType error:', e); }
+};
+window.clearPicketType = () => {
+    try { window.fencePOS?.clearPicketType(); } catch(e) { console.error('clearPicketType error:', e); }
 };
 window.proceedToComponents = async () => {
     try { await window.fencePOS?.proceedToComponents(); } catch(e) { console.error('proceedToComponents error:', e); }
@@ -3756,6 +6021,12 @@ window.checkout = async () => {
 window.updateCartItemQuantity = async (itemCode, delta) => {
     try { await window.fencePOS?.updateCartItemQuantity(itemCode, delta); } catch(e) { console.error('updateCartItemQuantity error:', e); }
 };
+window.removeCartItem = async (itemCode) => {
+    try { await window.fencePOS?.removeCartItem(itemCode); } catch(e) { console.error('removeCartItem error:', e); }
+};
+window.changePriceList = async (priceList) => {
+    try { await window.fencePOS?.changePriceList(priceList); } catch(e) { console.error('changePriceList error:', e); }
+};
 window.updateBundleItemQuantity = async (bundleItemCode, componentItemCode, delta) => {
     try { await window.fencePOS?.updateBundleItemQuantity(bundleItemCode, componentItemCode, delta); } catch(e) { console.error('updateBundleItemQuantity error:', e); }
 };
@@ -3767,8 +6038,8 @@ window.openCustomerSearch = () => {
 window.closeCustomerSearch = () => {
     try { window.fencePOS?.closeCustomerSearch(); } catch(e) { console.error('closeCustomerSearch error:', e); }
 };
-window.selectCustomer = (customerId, customerName, customerGroup) => {
-    try { window.fencePOS?.selectCustomer(customerId, customerName, customerGroup); } catch(e) { console.error('selectCustomer error:', e); }
+window.selectCustomer = async (customerId, customerName, customerGroup, defaultPriceList) => {
+    try { await window.fencePOS?.selectCustomer(customerId, customerName, customerGroup, defaultPriceList); } catch(e) { console.error('selectCustomer error:', e); }
 };
 window.clearSearch = () => {
     try { window.fencePOS?.clearSearch(); } catch(e) { console.error('clearSearch error:', e); }

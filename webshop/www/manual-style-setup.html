@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manual Style Setup</title>
+    <script src="/assets/js/frappe-web.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .step { margin: 20px 0; padding: 20px; border: 2px solid #ddd; border-radius: 8px; }
+        .step.completed { border-color: #28a745; background-color: #f8fff8; }
+        .step.error { border-color: #dc3545; background-color: #fff8f8; }
+        button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 5px; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .result { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; font-family: monospace; white-space: pre-line; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+        .code { background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🛠️ Manual Style Setup</h1>
+    <p>Since the API functions aren't loaded yet, we'll create the Style records manually.</p>
+    
+    <div class="step">
+        <h3>Step 1: Create Material Types</h3>
+        <p>Create the required Material Type records first.</p>
+        <button onclick="createMaterialTypes()">Create Material Types</button>
+        <div id="materialResult" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step">
+        <h3>Step 2: Clear Existing Styles (if needed)</h3>
+        <p>Clear any existing Style records that might be causing conflicts.</p>
+        <button onclick="clearExistingStyles()">Clear Existing Styles</button>
+        <div id="clearResult" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step">
+        <h3>Step 3: Create Style Records</h3>
+        <p>Create all the style records for each material type with proper naming.</p>
+        <button onclick="createStyleRecords()">Create Style Records</button>
+        <div id="styleResult" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step">
+        <h3>Step 4: Test POS Loading</h3>
+        <p>After creating styles, test if POS loads them correctly.</p>
+        <button onclick="testPOSLoading()">Test POS</button>
+        <div id="testResult" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step">
+        <h3>Alternative: Restart Server</h3>
+        <p>If you have server access, restart the Frappe server to load the new API functions:</p>
+        <div class="code">
+# Navigate to your site directory
+cd path/to/your/site
+
+# Restart bench (if using bench)
+bench restart
+
+# OR restart manually
+supervisorctl restart all
+
+# OR if using docker
+docker restart your-container-name
+        </div>
+        <p>After restart, the original migration script will work.</p>
+    </div>
+
+    <script>
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            element.innerHTML += `<span class="${className}">${message}</span>\n`;
+        }
+        
+        function clearLog(elementId) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = '';
+            element.style.display = 'none';
+        }
+        
+        async function createMaterialTypes() {
+            clearLog('materialResult');
+            log('materialResult', '🏗️ Creating Material Types...', 'info');
+            
+            const materialTypes = [
+                { name: 'Vinyl', type: 'Vinyl' },
+                { name: 'Aluminum', type: 'Aluminum' },
+                { name: 'Wood', type: 'Wood' },
+                { name: 'Pressure Treated', type: 'Pressure Treated' },
+                { name: 'Chain Link', type: 'Chain Link' }
+            ];
+            
+            let created = 0;
+            let existing = 0;
+            
+            for (const matType of materialTypes) {
+                try {
+                    const response = await frappe.call({
+                        method: 'frappe.client.save',
+                        args: {
+                            doc: {
+                                doctype: 'Material Type',
+                                name: matType.name,
+                                type: matType.type
+                            }
+                        }
+                    });
+                    
+                    if (response.message) {
+                        log('materialResult', `✅ Created: ${matType.name}`, 'success');
+                        created++;
+                    }
+                } catch (error) {
+                    if (error.message && error.message.includes('duplicate')) {
+                        log('materialResult', `ℹ️ Exists: ${matType.name}`, 'info');
+                        existing++;
+                    } else {
+                        log('materialResult', `❌ Error creating ${matType.name}: ${error.message}`, 'error');
+                    }
+                }
+            }
+            
+            log('materialResult', `\n📊 Summary: ${created} created, ${existing} existing`, 'info');
+        }
+        
+        async function clearExistingStyles() {
+            clearLog('clearResult');
+            log('clearResult', '🧹 Clearing existing Style records...', 'info');
+            
+            try {
+                // Get all existing Style records
+                const response = await frappe.call({
+                    method: 'frappe.client.get_list',
+                    args: {
+                        doctype: 'Style',
+                        fields: ['name'],
+                        limit_page_length: 1000
+                    }
+                });
+                
+                if (response.message && response.message.length > 0) {
+                    log('clearResult', `Found ${response.message.length} existing Style records`, 'info');
+                    
+                    let deleted = 0;
+                    for (const style of response.message) {
+                        try {
+                            await frappe.call({
+                                method: 'frappe.client.delete',
+                                args: {
+                                    doctype: 'Style',
+                                    name: style.name
+                                }
+                            });
+                            deleted++;
+                            
+                            if (deleted % 5 === 0) {
+                                log('clearResult', `Deleted ${deleted}/${response.message.length} records...`, 'info');
+                            }
+                        } catch (error) {
+                            log('clearResult', `Error deleting ${style.name}: ${error.message}`, 'error');
+                        }
+                        
+                        // Small delay to prevent overwhelming the server
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                    
+                    log('clearResult', `✅ Deleted ${deleted} Style records`, 'success');
+                } else {
+                    log('clearResult', 'No existing Style records found', 'info');
+                }
+            } catch (error) {
+                log('clearResult', `❌ Error clearing styles: ${error.message}`, 'error');
+            }
+        }
+        
+        async function createStyleRecords() {
+            clearLog('styleResult');
+            log('styleResult', '🎨 Creating Style Records...', 'info');
+            
+            const styleData = {
+                'Vinyl': [
+                    { name: 'Solid', desc: 'Full privacy solid panels' },
+                    { name: 'Lattice', desc: 'Decorative lattice design' },
+                    { name: 'Picket', desc: 'Traditional picket fence' },
+                    { name: 'Ranch Rail', desc: '2 or 3 rail ranch style' },
+                    { name: 'Spindle', desc: 'Classic spindle design' }
+                ],
+                'Aluminum': [
+                    { name: 'Solid', desc: 'Full privacy solid panels' },
+                    { name: 'Lattice', desc: 'Decorative lattice design' },
+                    { name: 'Picket', desc: 'Traditional picket fence' },
+                    { name: 'Ranch Rail', desc: '2 or 3 rail ranch style' },
+                    { name: 'Spindle', desc: 'Classic spindle design' }
+                ],
+                'Wood': [
+                    { name: 'Solid', desc: 'Full privacy solid panels' },
+                    { name: 'Lattice', desc: 'Decorative lattice design' },
+                    { name: 'Picket', desc: 'Traditional picket fence' },
+                    { name: 'Ranch Rail', desc: '2 or 3 rail ranch style' },
+                    { name: 'Board-on-Board', desc: 'Overlapping board design' }
+                ],
+                'Pressure Treated': [
+                    { name: 'Solid', desc: 'Full privacy solid panels' },
+                    { name: 'Lattice', desc: 'Decorative lattice design' },
+                    { name: 'Picket', desc: 'Traditional picket fence' },
+                    { name: 'Ranch Rail', desc: '2 or 3 rail ranch style' },
+                    { name: 'Board-on-Board', desc: 'Overlapping board design' }
+                ],
+                'Chain Link': [
+                    { name: 'Standard', desc: 'Standard chain link mesh' },
+                    { name: 'Privacy', desc: 'Chain link with privacy slats' },
+                    { name: 'Vinyl Coated', desc: 'Vinyl coated chain link' }
+                ]
+            };
+            
+            let created = 0;
+            let existing = 0;
+            let errors = 0;
+            
+            for (const [materialType, styles] of Object.entries(styleData)) {
+                log('styleResult', `\n📁 Processing ${materialType}:`, 'info');
+                
+                for (const style of styles) {
+                    try {
+                        const response = await frappe.call({
+                            method: 'frappe.client.save',
+                            args: {
+                                doc: {
+                                    doctype: 'Style',
+                                    style: style.name,
+                                    material_type: materialType,
+                                    description: style.desc
+                                }
+                            }
+                        });
+                        
+                        if (response.message) {
+                            log('styleResult', `  ✅ ${style.name}`, 'success');
+                            created++;
+                        }
+                    } catch (error) {
+                        if (error.message && error.message.includes('duplicate')) {
+                            log('styleResult', `  ℹ️ ${style.name} (exists)`, 'info');
+                            existing++;
+                        } else {
+                            log('styleResult', `  ❌ ${style.name}: ${error.message}`, 'error');
+                            errors++;
+                        }
+                    }
+                    
+                    // Small delay to prevent overwhelming the server
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+            
+            log('styleResult', `\n📊 Final Summary:`, 'info');
+            log('styleResult', `  Created: ${created} styles`, 'success');
+            log('styleResult', `  Existing: ${existing} styles`, 'info');
+            log('styleResult', `  Errors: ${errors} styles`, errors > 0 ? 'error' : 'info');
+            
+            if (created > 0 || existing > 0) {
+                log('styleResult', `\n🎉 Style records ready! Now test the POS.`, 'success');
+            }
+        }
+        
+        async function testPOSLoading() {
+            clearLog('testResult');
+            log('testResult', '🧪 Testing POS Style Loading...', 'info');
+            
+            // Check if we can get styles via direct database query
+            try {
+                const response = await frappe.call({
+                    method: 'frappe.client.get_list',
+                    args: {
+                        doctype: 'Style',
+                        fields: ['name', 'style', 'material_type', 'description'],
+                        limit_page_length: 50
+                    }
+                });
+                
+                if (response.message && response.message.length > 0) {
+                    log('testResult', `✅ Found ${response.message.length} style records in database`, 'success');
+                    
+                    // Group by material type
+                    const groupedStyles = {};
+                    response.message.forEach(style => {
+                        if (!groupedStyles[style.material_type]) {
+                            groupedStyles[style.material_type] = [];
+                        }
+                        groupedStyles[style.material_type].push(style);
+                    });
+                    
+                    log('testResult', '\n📋 Styles by Material Type:', 'info');
+                    for (const [matType, styles] of Object.entries(groupedStyles)) {
+                        log('testResult', `  ${matType}: ${styles.length} styles`, 'info');
+                        styles.forEach(style => {
+                            log('testResult', `    - ${style.style}`, 'info');
+                        });
+                    }
+                    
+                    log('testResult', '\n🔄 Now refresh your POS page to see the styles!', 'success');
+                    log('testResult', 'If styles still don\'t load, server restart may be needed.', 'warning');
+                } else {
+                    log('testResult', '❌ No style records found. Try creating them first.', 'error');
+                }
+                
+            } catch (error) {
+                log('testResult', `❌ Error checking styles: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-check for existing styles on page load
+        window.addEventListener('load', function() {
+            console.log('Manual Style Setup page loaded');
+        });
+    </script>
+</body>
+</html>

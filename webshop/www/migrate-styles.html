@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Style Migration</title>
+    <script src="/assets/js/frappe-web.min.js"></script>
+    <script>
+        // Ensure frappe is available
+        if (typeof frappe === 'undefined') {
+            window.frappe = {
+                call: function(opts) {
+                    return fetch('/api/method/' + opts.method, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Frappe-CSRF-Token': frappe.csrf_token || ''
+                        },
+                        body: JSON.stringify(opts.args || {})
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (opts.callback) opts.callback(data);
+                        return data;
+                    })
+                    .catch(error => {
+                        console.error('API Error:', error);
+                        if (opts.callback) opts.callback({message: {success: false, error: error.message}});
+                    });
+                }
+            };
+        }
+    </script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .step { margin: 20px 0; padding: 20px; border: 2px solid #ddd; border-radius: 8px; }
+        .step.completed { border-color: #28a745; background-color: #f8fff8; }
+        .step.error { border-color: #dc3545; background-color: #fff8f8; }
+        button { padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .result { margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; font-family: monospace; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+    </style>
+</head>
+<body>
+    <h1>🎨 Style Migration Tool</h1>
+    <p>This tool migrates your POS system from hard-coded styles to the Style Doctype approach.</p>
+    
+    <div class="step" id="step1">
+        <h3>Step 1: Populate Style Doctype</h3>
+        <p>Creates Style records for all material types with their specific styles.</p>
+        <button onclick="runStep1()">Populate Styles</button>
+        <div id="result1" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step" id="step2">
+        <h3>Step 2: Update Custom Field</h3>
+        <p>Updates the Item custom_style field to be a Link field to Style doctype.</p>
+        <button onclick="runStep2()">Update Field</button>
+        <div id="result2" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step" id="step3">
+        <h3>Step 3: Test Migration</h3>
+        <p>Tests that styles load correctly for different material types.</p>
+        <button onclick="runStep3()">Test Styles</button>
+        <div id="result3" class="result" style="display:none;"></div>
+    </div>
+    
+    <div class="step">
+        <h3>🚀 Run All Steps</h3>
+        <p>Execute the complete migration process automatically.</p>
+        <button onclick="runAllSteps()" id="runAllBtn">Run Complete Migration</button>
+    </div>
+
+    <script>
+        async function runStep1() {
+            const resultDiv = document.getElementById('result1');
+            const stepDiv = document.getElementById('step1');
+            
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Running migration...';
+            
+            try {
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.populate_style_doctype'
+                });
+                
+                if (response.message && response.message.success) {
+                    resultDiv.innerHTML = `<span class="success">✅ Success!</span><br>
+                        Created: ${response.message.created_count} styles<br>
+                        Existing: ${response.message.existing_count} styles<br>
+                        Total: ${response.message.total_combinations} combinations`;
+                    stepDiv.classList.add('completed');
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Error: ${response.message?.error || 'Unknown error'}</span>`;
+                    stepDiv.classList.add('error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                stepDiv.classList.add('error');
+            }
+        }
+        
+        async function runStep2() {
+            const resultDiv = document.getElementById('result2');
+            const stepDiv = document.getElementById('step2');
+            
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Updating field...';
+            
+            try {
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.update_item_custom_style_field'
+                });
+                
+                if (response.message && response.message.success) {
+                    const action = response.message.action;
+                    let message = '';
+                    
+                    if (action === 'created') {
+                        message = '✅ Created custom_style field as Link to Style doctype';
+                    } else if (action === 'updated') {
+                        message = `✅ Updated field from ${response.message.previous_type} to Link`;
+                    } else {
+                        message = '✅ Field already properly configured';
+                    }
+                    
+                    resultDiv.innerHTML = `<span class="success">${message}</span>`;
+                    stepDiv.classList.add('completed');
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Error: ${response.message?.error}</span>`;
+                    stepDiv.classList.add('error');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                stepDiv.classList.add('error');
+            }
+        }
+        
+        async function runStep3() {
+            const resultDiv = document.getElementById('result3');
+            const stepDiv = document.getElementById('step3');
+            
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Testing styles...';
+            
+            const materialTypes = ['vinyl', 'aluminum', 'wood', 'chain-link'];
+            let results = [];
+            
+            try {
+                for (const materialType of materialTypes) {
+                    const response = await frappe.call({
+                        method: 'webshop.webshop.pos_api.get_styles_for_material_type',
+                        args: { material_type: materialType }
+                    });
+                    
+                    if (response.message && response.message.success) {
+                        const styles = response.message.styles || [];
+                        const fallback = response.message.fallback || false;
+                        
+                        if (fallback) {
+                            results.push(`<span class="warning">⚠️ ${materialType}: ${styles.length} styles (fallback)</span>`);
+                        } else {
+                            results.push(`<span class="success">✅ ${materialType}: ${styles.length} styles</span>`);
+                        }
+                    } else {
+                        results.push(`<span class="error">❌ ${materialType}: Failed</span>`);
+                    }
+                }
+                
+                resultDiv.innerHTML = results.join('<br>');
+                
+                if (results.some(r => r.includes('fallback') || r.includes('Failed'))) {
+                    stepDiv.classList.add('error');
+                } else {
+                    stepDiv.classList.add('completed');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error: ${error.message}</span>`;
+                stepDiv.classList.add('error');
+            }
+        }
+        
+        async function runAllSteps() {
+            const btn = document.getElementById('runAllBtn');
+            btn.disabled = true;
+            btn.innerHTML = 'Running...';
+            
+            await runStep1();
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Small delay
+            
+            await runStep2();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await runStep3();
+            
+            btn.disabled = false;
+            btn.innerHTML = 'Migration Complete!';
+            btn.style.background = '#28a745';
+        }
+    </script>
+</body>
+</html>

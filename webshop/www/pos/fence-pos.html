@@ -700,14 +700,7 @@ class FencePOS {
                     unit: 'per foot'
                 }));
                 
-                // Add common accessories
-                this.products.push(
-                    { id: 'gate-3ft', name: '3ft Gate', icon: '🚪', price: 150, category: 'Gates', unit: 'each' },
-                    { id: 'gate-4ft', name: '4ft Gate', icon: '🚪', price: 175, category: 'Gates', unit: 'each' },
-                    { id: 'post', name: 'Fence Post', icon: '🏗️', price: 25, category: 'Posts', unit: 'each' },
-                    { id: 'hardware', name: 'Hardware Kit', icon: '🔧', price: 8, category: 'Hardware', unit: 'set' },
-                    { id: 'concrete', name: 'Concrete Mix', icon: '🪣', price: 8, category: 'Materials', unit: 'bag' }
-                );
+                // No hard-coded accessories - all from Item doctype
             } else {
                 // Fallback products
                 this.products = this.getFallbackProducts();
@@ -725,30 +718,12 @@ class FencePOS {
     }
     
     getFallbackProducts() {
-        return [
-            { id: 'vinyl-privacy', name: 'Vinyl Privacy', icon: '🏠', price: 18, category: 'Panels', unit: 'per foot' },
-            { id: 'vinyl-picket', name: 'Vinyl Picket', icon: '🏠', price: 14, category: 'Panels', unit: 'per foot' },
-            { id: 'aluminum-privacy', name: 'Aluminum Privacy', icon: '🏗️', price: 25, category: 'Panels', unit: 'per foot' },
-            { id: 'wood-privacy', name: 'Wood Privacy', icon: '🌲', price: 12, category: 'Panels', unit: 'per foot' },
-            { id: 'chain-link', name: 'Chain Link', icon: '🔗', price: 8, category: 'Panels', unit: 'per foot' },
-            { id: 'gate-3ft', name: '3ft Gate', icon: '🚪', price: 150, category: 'Gates', unit: 'each' },
-            { id: 'post', name: 'Fence Post', icon: '🏗️', price: 25, category: 'Posts', unit: 'each' },
-            { id: 'hardware', name: 'Hardware Kit', icon: '🔧', price: 8, category: 'Hardware', unit: 'set' }
-        ];
+        return [];
     }
     
     getStylePrice(styleId) {
-        const pricing = {
-            'vinyl-privacy': 18,
-            'vinyl-semi-privacy': 16,
-            'vinyl-picket': 14,
-            'aluminum-privacy': 25,
-            'aluminum-picket': 22,
-            'wood-privacy': 12,
-            'wood-picket': 10,
-            'chain-link': 8
-        };
-        return pricing[styleId] || 15;
+        // Use dynamic pricing from Item doctype
+        return 0; // Will be fetched from actual Item pricing
     }
     
     renderProducts() {

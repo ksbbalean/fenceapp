@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Style Migration Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        .material-styles { margin: 10px 0; }
+        .style-item { display: inline-block; margin: 5px; padding: 5px 10px; background: #f0f0f0; border-radius: 3px; }
+        button { margin: 5px; padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        #results { margin-top: 20px; white-space: pre-wrap; font-family: monospace; background: #f8f9fa; padding: 15px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🎨 Style Doctype Migration Test</h1>
+    <p>This page tests the migration from hard-coded styles to Style doctype approach.</p>
+    
+    <div class="test-section">
+        <h3>🚀 Run Migration</h3>
+        <p>Click this button to execute the complete migration process:</p>
+        <button onclick="runMigration()">Run Full Migration</button>
+        <button onclick="populateStylesOnly()">Populate Styles Only</button>
+        <button onclick="testApiOnly()">Test API Only</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>🧪 Test Style Loading by Material Type</h3>
+        <p>Test loading styles for different material types:</p>
+        <button onclick="testStylesForMaterial('vinyl')">Test Vinyl</button>
+        <button onclick="testStylesForMaterial('aluminum')">Test Aluminum</button>
+        <button onclick="testStylesForMaterial('wood')">Test Wood</button>
+        <button onclick="testStylesForMaterial('pressure-treated')">Test Pressure Treated</button>
+        <button onclick="testStylesForMaterial('chain-link')">Test Chain Link</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>📊 Migration Status</h3>
+        <button onclick="checkMigrationStatus()">Check Migration Status</button>
+    </div>
+    
+    <div id="results"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            results.innerHTML += `[${timestamp}] <span class="${className}">${message}</span>\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+        
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+        
+        async function runMigration() {
+            clearResults();
+            log('🚀 Starting full migration process...', 'info');
+            
+            try {
+                // Call the migration API
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.populate_style_doctype'
+                });
+                
+                if (response.message && response.message.success) {
+                    log(`✅ Migration completed successfully!`, 'success');
+                    log(`   Created: ${response.message.created_count} styles`, 'success');
+                    log(`   Existing: ${response.message.existing_count} styles`, 'success');
+                    log(`   Total combinations: ${response.message.total_combinations}`, 'success');
+                } else {
+                    log(`❌ Migration failed: ${response.message?.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Migration error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function populateStylesOnly() {
+            clearResults();
+            log('🎨 Populating Style doctype...', 'info');
+            
+            try {
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.populate_style_doctype'
+                });
+                
+                if (response.message && response.message.success) {
+                    log(`✅ Styles populated successfully!`, 'success');
+                    log(`Details: ${response.message.message}`, 'info');
+                } else {
+                    log(`❌ Error: ${response.message?.error}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Exception: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testStylesForMaterial(materialType) {
+            log(`🧪 Testing styles for material: ${materialType}`, 'info');
+            
+            try {
+                const response = await frappe.call({
+                    method: 'webshop.webshop.pos_api.get_styles_for_material_type',
+                    args: { material_type: materialType }
+                });
+                
+                if (response.message && response.message.success) {
+                    const styles = response.message.styles || [];
+                    const fallback = response.message.fallback || false;
+                    
+                    if (fallback) {
+                        log(`⚠️  Using fallback styles for ${materialType}`, 'warning');
+                    } else {
+                        log(`✅ Found ${styles.length} styles for ${materialType}`, 'success');
+                    }
+                    
+                    // Display styles
+                    styles.forEach(style => {
+                        log(`   - ${style.name}: ${style.description}`, 'info');
+                    });
+                } else {
+                    log(`❌ Failed to load styles for ${materialType}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error loading styles for ${materialType}: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testApiOnly() {
+            clearResults();
+            log('🧪 Testing API endpoints...', 'info');
+            
+            const materialTypes = ['vinyl', 'aluminum', 'wood', 'pressure-treated', 'chain-link'];
+            
+            for (const materialType of materialTypes) {
+                await testStylesForMaterial(materialType);
+            }
+        }
+        
+        async function checkMigrationStatus() {
+            clearResults();
+            log('📊 Checking migration status...', 'info');
+            
+            try {
+                // Test if styles are loading from doctype
+                const testResponse = await frappe.call({
+                    method: 'webshop.webshop.pos_api.get_styles_for_material_type',
+                    args: { material_type: 'vinyl' }
+                });
+                
+                if (testResponse.message) {
+                    const fallback = testResponse.message.fallback || false;
+                    const styles = testResponse.message.styles || [];
+                    
+                    if (fallback) {
+                        log('❌ Migration incomplete - using fallback styles', 'warning');
+                        log('   Run migration to populate Style doctype', 'warning');
+                    } else {
+                        log('✅ Migration successful - loading from Style doctype', 'success');
+                        log(`   Found ${styles.length} styles for vinyl`, 'success');
+                    }
+                }
+                
+                // Check doctype records count
+                log('\n📋 Checking doctype records...', 'info');
+                
+                // This would need server-side support to get counts
+                log('   Use migration script for detailed status report', 'info');
+                
+            } catch (error) {
+                log(`❌ Status check error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize
+        log('🎨 Style Migration Test Page Loaded', 'success');
+        log('Click buttons above to test the migration process.', 'info');
+    </script>
+</body>
+</html>

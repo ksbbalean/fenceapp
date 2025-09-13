@@ -1,0 +1,261 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('H&J Fence Supply - Quality Fencing Solutions') }}{% endblock %}
+
+{% block head_include %}
+<style>
+    .hero-section {
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        color: white;
+        padding: 80px 20px;
+        text-align: center;
+        margin-bottom: 40px;
+    }
+    
+    .hero-title {
+        font-size: 3rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+    }
+    
+    .hero-subtitle {
+        font-size: 1.5rem;
+        margin-bottom: 30px;
+        opacity: 0.9;
+    }
+    
+    .hero-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    
+    .hero-btn {
+        padding: 15px 30px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 18px;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .hero-btn.primary {
+        background: #28a745;
+        color: white;
+    }
+    
+    .hero-btn.primary:hover {
+        background: #218838;
+        transform: translateY(-2px);
+    }
+    
+    .hero-btn.secondary {
+        background: rgba(255,255,255,0.2);
+        color: white;
+        border: 2px solid white;
+    }
+    
+    .hero-btn.secondary:hover {
+        background: white;
+        color: #007bff;
+    }
+    
+    .features-section {
+        padding: 60px 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 40px;
+        margin-top: 40px;
+    }
+    
+    .feature-card {
+        text-align: center;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        background: white;
+        transition: transform 0.3s;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .feature-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+    }
+    
+    .feature-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #333;
+    }
+    
+    .feature-description {
+        color: #666;
+        line-height: 1.6;
+    }
+    
+    .calculator-highlight {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        padding: 40px;
+        border-radius: 12px;
+        text-align: center;
+        margin: 40px 0;
+    }
+    
+    .calculator-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 15px;
+    }
+    
+    .calculator-description {
+        font-size: 1.2rem;
+        margin-bottom: 25px;
+        opacity: 0.9;
+    }
+    
+    .calculator-btn {
+        background: white;
+        color: #28a745;
+        padding: 15px 30px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 18px;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .calculator-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    @media (max-width: 768px) {
+        .hero-title {
+            font-size: 2rem;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.2rem;
+        }
+        
+        .hero-buttons {
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .features-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="hero-section">
+    <h1 class="hero-title">H&J Fence Supply</h1>
+    <p class="hero-subtitle">Quality Fencing Solutions for Every Project</p>
+    <div class="hero-buttons">
+        <a href="/fence-calculator" class="hero-btn primary">🎨 Draw My Fence</a>
+        <a href="/all-products" class="hero-btn secondary">Browse Products</a>
+    </div>
+</div>
+
+<div class="features-section">
+    <div class="calculator-highlight">
+        <h2 class="calculator-title">Free Fence Drawing Calculator</h2>
+        <p class="calculator-description">
+            Design your perfect fence layout with our interactive drawing tool. 
+            Get accurate measurements and instant estimates in minutes!
+        </p>
+        <a href="/fence-calculator" class="calculator-btn">Start Drawing Now →</a>
+    </div>
+    
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🏠</div>
+            <h3 class="feature-title">Vinyl Fencing</h3>
+            <p class="feature-description">
+                Low-maintenance, durable vinyl fences in various styles and colors. 
+                Perfect for privacy and aesthetic appeal.
+            </p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🏗️</div>
+            <h3 class="feature-title">Aluminum Fencing</h3>
+            <p class="feature-description">
+                Elegant and strong aluminum fences that resist rust and require minimal upkeep. 
+                Ideal for both residential and commercial properties.
+            </p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🌲</div>
+            <h3 class="feature-title">Wood Fencing</h3>
+            <p class="feature-description">
+                Classic wood fences with natural beauty and warmth. 
+                Available in various styles including privacy, picket, and ranch rail.
+            </p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🔗</div>
+            <h3 class="feature-title">Chain Link Fencing</h3>
+            <p class="feature-description">
+                Affordable and durable chain link fencing for security and containment. 
+                Perfect for commercial and residential applications.
+            </p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🚪</div>
+            <h3 class="feature-title">Gates & Hardware</h3>
+            <p class="feature-description">
+                Complete selection of gates, hinges, latches, and hardware to complement 
+                any fence installation.
+            </p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">📋</div>
+            <h3 class="feature-title">Free Estimates</h3>
+            <p class="feature-description">
+                Get accurate estimates for your fence project using our online calculator 
+                or request a professional consultation.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="features-section">
+    <div class="calculator-highlight">
+        <h2 class="calculator-title">Why Choose Our Fence Calculator?</h2>
+        <p class="calculator-description">
+            • Interactive drawing tool with grid and snap-to-grid functionality<br>
+            • Real-time measurements and cost calculations<br>
+            • Multiple fence styles and color options<br>
+            • Export drawings and save for later<br>
+            • Instant quote generation and estimate requests
+        </p>
+        <a href="/fence-calculator" class="calculator-btn">Try It Now →</a>
+    </div>
+</div>
+{% endblock %}
+
