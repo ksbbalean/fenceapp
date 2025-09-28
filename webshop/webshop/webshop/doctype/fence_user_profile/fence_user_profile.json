@@ -1,0 +1,318 @@
+{
+	"actions": [],
+	"allow_rename": 1,
+	"autoname": "field:user",
+	"creation": "2024-01-23 14:35:00.000000",
+	"default_view": "List",
+	"doctype": "DocType",
+	"editable_grid": 1,
+	"engine": "InnoDB",
+	"field_order": [
+		"user",
+		"column_break_2",
+		"user_role",
+		"personal_details_section",
+		"first_name",
+		"last_name",
+		"email",
+		"column_break_7",
+		"phone",
+		"mobile",
+		"date_of_birth",
+		"company_details_section",
+		"company",
+		"employee_id",
+		"department",
+		"column_break_13",
+		"position",
+		"hire_date",
+		"supervisor",
+		"contractor_details_section",
+		"contractor_license",
+		"specialization",
+		"service_area",
+		"column_break_19",
+		"rating",
+		"total_projects",
+		"verified_contractor",
+		"customer_details_section",
+		"customer_type",
+		"preferred_contact_method",
+		"marketing_consent",
+		"column_break_26",
+		"loyalty_points",
+		"total_purchases",
+		"vip_status",
+		"system_settings_section",
+		"active",
+		"last_login",
+		"column_break_32",
+		"created_date",
+		"notes"
+	],
+	"fields": [
+		{
+			"fieldname": "user",
+			"fieldtype": "Link",
+			"in_list_view": 1,
+			"label": "User",
+			"options": "User",
+			"reqd": 1,
+			"unique": 1
+		},
+		{
+			"fieldname": "column_break_2",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "user_role",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "User Role",
+			"options": "Admin\nEmployee\nContractor\nCustomer",
+			"reqd": 1
+		},
+		{
+			"fieldname": "personal_details_section",
+			"fieldtype": "Section Break",
+			"label": "Personal Details"
+		},
+		{
+			"fieldname": "first_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "First Name",
+			"reqd": 1
+		},
+		{
+			"fieldname": "last_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Last Name",
+			"reqd": 1
+		},
+		{
+			"fieldname": "email",
+			"fieldtype": "Data",
+			"label": "Email",
+			"options": "Email",
+			"read_only": 1
+		},
+		{
+			"fieldname": "column_break_7",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "phone",
+			"fieldtype": "Data",
+			"label": "Phone"
+		},
+		{
+			"fieldname": "mobile",
+			"fieldtype": "Data",
+			"label": "Mobile"
+		},
+		{
+			"fieldname": "date_of_birth",
+			"fieldtype": "Date",
+			"label": "Date of Birth"
+		},
+		{
+			"fieldname": "company_details_section",
+			"fieldtype": "Section Break",
+			"label": "Company Details"
+		},
+		{
+			"fieldname": "company",
+			"fieldtype": "Link",
+			"label": "Company",
+			"options": "Fence Company"
+		},
+		{
+			"fieldname": "employee_id",
+			"fieldtype": "Data",
+			"label": "Employee ID"
+		},
+		{
+			"fieldname": "department",
+			"fieldtype": "Data",
+			"label": "Department"
+		},
+		{
+			"fieldname": "column_break_13",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "position",
+			"fieldtype": "Data",
+			"label": "Position"
+		},
+		{
+			"fieldname": "hire_date",
+			"fieldtype": "Date",
+			"label": "Hire Date"
+		},
+		{
+			"fieldname": "supervisor",
+			"fieldtype": "Link",
+			"label": "Supervisor",
+			"options": "Fence User Profile"
+		},
+		{
+			"fieldname": "contractor_details_section",
+			"fieldtype": "Section Break",
+			"label": "Contractor Details"
+		},
+		{
+			"fieldname": "contractor_license",
+			"fieldtype": "Data",
+			"label": "Contractor License"
+		},
+		{
+			"fieldname": "specialization",
+			"fieldtype": "Small Text",
+			"label": "Specialization"
+		},
+		{
+			"fieldname": "service_area",
+			"fieldtype": "Small Text",
+			"label": "Service Area"
+		},
+		{
+			"fieldname": "column_break_19",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "rating",
+			"fieldtype": "Float",
+			"label": "Rating",
+			"precision": "2"
+		},
+		{
+			"fieldname": "total_projects",
+			"fieldtype": "Int",
+			"label": "Total Projects"
+		},
+		{
+			"fieldname": "verified_contractor",
+			"fieldtype": "Check",
+			"label": "Verified Contractor"
+		},
+		{
+			"fieldname": "customer_details_section",
+			"fieldtype": "Section Break",
+			"label": "Customer Details"
+		},
+		{
+			"fieldname": "customer_type",
+			"fieldtype": "Select",
+			"label": "Customer Type",
+			"options": "Residential\nCommercial\nGovernment\nOther"
+		},
+		{
+			"fieldname": "preferred_contact_method",
+			"fieldtype": "Select",
+			"label": "Preferred Contact Method",
+			"options": "Email\nPhone\nSMS\nMail"
+		},
+		{
+			"fieldname": "marketing_consent",
+			"fieldtype": "Check",
+			"label": "Marketing Consent"
+		},
+		{
+			"fieldname": "column_break_26",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "loyalty_points",
+			"fieldtype": "Int",
+			"label": "Loyalty Points"
+		},
+		{
+			"fieldname": "total_purchases",
+			"fieldtype": "Currency",
+			"label": "Total Purchases"
+		},
+		{
+			"fieldname": "vip_status",
+			"fieldtype": "Check",
+			"label": "VIP Status"
+		},
+		{
+			"fieldname": "system_settings_section",
+			"fieldtype": "Section Break",
+			"label": "System Settings"
+		},
+		{
+			"fieldname": "active",
+			"fieldtype": "Check",
+			"default": "1",
+			"label": "Active"
+		},
+		{
+			"fieldname": "last_login",
+			"fieldtype": "Datetime",
+			"label": "Last Login",
+			"read_only": 1
+		},
+		{
+			"fieldname": "column_break_32",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "created_date",
+			"fieldtype": "Date",
+			"label": "Created Date",
+			"read_only": 1
+		},
+		{
+			"fieldname": "notes",
+			"fieldtype": "Text",
+			"label": "Notes"
+		}
+	],
+	"index_web_pages_for_search": 1,
+	"links": [],
+	"modified": "2024-01-23 14:35:00.000000",
+	"modified_by": "Administrator",
+	"module": "Webshop",
+	"name": "Fence User Profile",
+	"naming_rule": "By fieldname",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"create": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Administrator",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"read": 1,
+			"role": "All",
+			"if_owner": 1
+		}
+	],
+	"quick_entry": 1,
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 1
+}

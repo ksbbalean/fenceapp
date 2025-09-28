@@ -1,0 +1,519 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('Register - H&J Fence Supply') }}{% endblock %}
+
+{% block head_include %}
+<style>
+    body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .register-container {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        padding: 40px;
+        width: 100%;
+        max-width: 500px;
+        margin: 20px;
+    }
+
+    .register-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+
+    .register-header h1 {
+        color: #2c3e50;
+        font-size: 28px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .register-header p {
+        color: #6c757d;
+        font-size: 16px;
+    }
+
+    .role-selector {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 30px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 4px;
+    }
+
+    .role-option {
+        flex: 1;
+        padding: 12px 16px;
+        border: none;
+        background: transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        text-align: center;
+    }
+
+    .role-option.active {
+        background: #007bff;
+        color: white;
+        box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .form-label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+    }
+
+    .form-control.error {
+        border-color: #dc3545;
+    }
+
+    .error-message {
+        color: #dc3545;
+        font-size: 12px;
+        margin-top: 4px;
+    }
+
+    .contractor-fields {
+        display: none;
+        border-top: 1px solid #dee2e6;
+        padding-top: 20px;
+        margin-top: 20px;
+    }
+
+    .contractor-fields.show {
+        display: block;
+    }
+
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+
+    .checkbox {
+        width: 18px;
+        height: 18px;
+    }
+
+    .register-btn {
+        width: 100%;
+        padding: 14px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-bottom: 20px;
+    }
+
+    .register-btn:hover {
+        background: #0056b3;
+        transform: translateY(-1px);
+    }
+
+    .register-btn:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .login-link {
+        text-align: center;
+        color: #6c757d;
+    }
+
+    .login-link a {
+        color: #007bff;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .login-link a:hover {
+        text-decoration: underline;
+    }
+
+    .loading {
+        display: none;
+    }
+
+    .loading.show {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .success-message {
+        background: #d4edda;
+        color: #155724;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #28a745;
+    }
+
+    .error-alert {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #dc3545;
+    }
+
+    @media (max-width: 768px) {
+        .register-container {
+            margin: 10px;
+            padding: 30px 20px;
+        }
+
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+
+        .role-selector {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="register-container">
+    <div class="register-header">
+        <h1>Create Account</h1>
+        <p>Join H&J Fence Supply Calculator</p>
+    </div>
+
+    <div class="role-selector">
+        <button type="button" class="role-option active" data-role="Customer">
+            Customer
+        </button>
+        <button type="button" class="role-option" data-role="Contractor">
+            Contractor
+        </button>
+    </div>
+
+    <form id="registerForm">
+        <div id="alertContainer"></div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">First Name *</label>
+                <input type="text" class="form-control" name="first_name" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Last Name *</label>
+                <input type="text" class="form-control" name="last_name" required>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Email Address *</label>
+            <input type="email" class="form-control" name="email" required>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" class="form-control" name="phone">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mobile</label>
+                <input type="tel" class="form-control" name="mobile">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Password *</label>
+            <input type="password" class="form-control" name="password" required minlength="8">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Confirm Password *</label>
+            <input type="password" class="form-control" name="confirm_password" required>
+        </div>
+
+        <!-- Customer specific fields -->
+        <div id="customerFields">
+            <div class="form-group">
+                <label class="form-label">Customer Type</label>
+                <select class="form-control" name="customer_type">
+                    <option value="Residential">Residential</option>
+                    <option value="Commercial">Commercial</option>
+                    <option value="Government">Government</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Contractor specific fields -->
+        <div id="contractorFields" class="contractor-fields">
+            <h4 style="margin-bottom: 15px; color: #495057;">Contractor Information</h4>
+            
+            <div class="form-group">
+                <label class="form-label">License Number</label>
+                <input type="text" class="form-control" name="contractor_license">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Company Name</label>
+                <input type="text" class="form-control" name="company_name">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Specialization</label>
+                <textarea class="form-control" name="specialization" rows="3" 
+                         placeholder="e.g., Vinyl fencing, Commercial installations, Residential repairs"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Service Area</label>
+                <textarea class="form-control" name="service_area" rows="2" 
+                         placeholder="e.g., Dallas-Fort Worth area, Within 50 miles of Austin"></textarea>
+            </div>
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" class="checkbox" name="marketing_consent" id="marketingConsent">
+            <label for="marketingConsent">I agree to receive marketing communications</label>
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" class="checkbox" name="terms_agreement" id="termsAgreement" required>
+            <label for="termsAgreement">I agree to the Terms of Service and Privacy Policy *</label>
+        </div>
+
+        <button type="submit" class="register-btn">
+            <span class="loading"></span>
+            <span class="btn-text">Create Account</span>
+        </button>
+    </form>
+
+    <div class="login-link">
+        Already have an account? <a href="/login">Sign in here</a>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('registerForm');
+    const roleOptions = document.querySelectorAll('.role-option');
+    const contractorFields = document.getElementById('contractorFields');
+    const customerFields = document.getElementById('customerFields');
+    const submitBtn = form.querySelector('.register-btn');
+    const loading = submitBtn.querySelector('.loading');
+    const btnText = submitBtn.querySelector('.btn-text');
+    const alertContainer = document.getElementById('alertContainer');
+    
+    let selectedRole = 'Customer';
+
+    // Role selection
+    roleOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            roleOptions.forEach(opt => opt.classList.remove('active'));
+            this.classList.add('active');
+            selectedRole = this.dataset.role;
+            
+            if (selectedRole === 'Contractor') {
+                contractorFields.classList.add('show');
+                customerFields.style.display = 'none';
+            } else {
+                contractorFields.classList.remove('show');
+                customerFields.style.display = 'block';
+            }
+        });
+    });
+
+    // Form validation
+    function validateForm() {
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData);
+        
+        // Clear previous errors
+        document.querySelectorAll('.form-control').forEach(input => {
+            input.classList.remove('error');
+        });
+        document.querySelectorAll('.error-message').forEach(msg => {
+            msg.remove();
+        });
+        
+        let isValid = true;
+        
+        // Required fields
+        const requiredFields = ['first_name', 'last_name', 'email', 'password', 'confirm_password'];
+        requiredFields.forEach(field => {
+            if (!data[field] || data[field].trim() === '') {
+                showFieldError(field, 'This field is required');
+                isValid = false;
+            }
+        });
+        
+        // Email validation
+        if (data.email && !isValidEmail(data.email)) {
+            showFieldError('email', 'Please enter a valid email address');
+            isValid = false;
+        }
+        
+        // Password validation
+        if (data.password && data.password.length < 8) {
+            showFieldError('password', 'Password must be at least 8 characters');
+            isValid = false;
+        }
+        
+        // Password confirmation
+        if (data.password !== data.confirm_password) {
+            showFieldError('confirm_password', 'Passwords do not match');
+            isValid = false;
+        }
+        
+        // Terms agreement
+        if (!data.terms_agreement) {
+            showAlert('You must agree to the Terms of Service and Privacy Policy', 'error');
+            isValid = false;
+        }
+        
+        return isValid;
+    }
+    
+    function showFieldError(fieldName, message) {
+        const field = form.querySelector(`[name="${fieldName}"]`);
+        if (field) {
+            field.classList.add('error');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            field.parentNode.appendChild(errorDiv);
+        }
+    }
+    
+    function isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+    
+    function showAlert(message, type = 'error') {
+        alertContainer.innerHTML = `
+            <div class="${type === 'error' ? 'error-alert' : 'success-message'}">
+                ${message}
+            </div>
+        `;
+        alertContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Form submission
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        if (!validateForm()) {
+            return;
+        }
+        
+        // Show loading state
+        submitBtn.disabled = true;
+        loading.classList.add('show');
+        btnText.textContent = 'Creating Account...';
+        
+        try {
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData);
+            data.role = selectedRole;
+            
+            // Choose the appropriate registration endpoint
+            const endpoint = selectedRole === 'Contractor' 
+                ? 'webshop.user_management.register_contractor_account'
+                : 'webshop.user_management.create_customer_account';
+            
+            const response = await frappe.call({
+                method: endpoint,
+                args: {
+                    [selectedRole === 'Contractor' ? 'contractor_data' : 'user_data']: JSON.stringify(data)
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                showAlert(response.message.message, 'success');
+                
+                // Clear form
+                form.reset();
+                
+                // Redirect after delay
+                setTimeout(() => {
+                    window.location.href = '/login?registered=1';
+                }, 2000);
+                
+            } else {
+                showAlert(response.message?.message || 'Registration failed. Please try again.');
+            }
+            
+        } catch (error) {
+            console.error('Registration error:', error);
+            showAlert('An error occurred during registration. Please try again.');
+        } finally {
+            // Reset button state
+            submitBtn.disabled = false;
+            loading.classList.remove('show');
+            btnText.textContent = 'Create Account';
+        }
+    });
+    
+    // Real-time password confirmation
+    const passwordField = form.querySelector('[name="password"]');
+    const confirmPasswordField = form.querySelector('[name="confirm_password"]');
+    
+    confirmPasswordField.addEventListener('input', function() {
+        if (this.value && passwordField.value && this.value !== passwordField.value) {
+            this.classList.add('error');
+        } else {
+            this.classList.remove('error');
+        }
+    });
+});
+</script>
+{% endblock %}

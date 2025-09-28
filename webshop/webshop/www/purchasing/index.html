@@ -1,0 +1,311 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('H&J Fence Supply Purchasing Interface') }}{% endblock %}
+
+{% block head_include %}
+<link rel="stylesheet" type="text/css" href="/purchasing/purchasing.css">
+<style>
+    /* Inline critical styles for immediate loading */
+    .purchasing-container {
+        display: grid;
+        grid-template-columns: 250px 2fr 0.8fr;
+        min-height: 100vh;
+        gap: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .supplier-sidebar {
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        padding: 20px 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .left-panel {
+        background: white;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #dee2e6;
+    }
+    
+    .right-panel {
+        background: white;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .analytics-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+
+    .analytics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .analytics-item {
+        text-align: center;
+        padding: 8px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 4px;
+    }
+
+    .analytics-number {
+        font-size: 18px;
+        font-weight: bold;
+        display: block;
+    }
+
+    .analytics-label {
+        font-size: 11px;
+        opacity: 0.9;
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="purchasing-container">
+    <!-- Supplier Sidebar -->
+    <div class="supplier-sidebar">
+        <!-- Analytics Dashboard -->
+        <div class="analytics-section">
+            <div class="analytics-title">{{ _("Purchasing Dashboard") }}</div>
+            <div class="analytics-grid" id="analyticsGrid">
+                <div class="analytics-item">
+                    <span class="analytics-number" id="pendingRequisitions">-</span>
+                    <span class="analytics-label">{{ _("Pending Requests") }}</span>
+                </div>
+                <div class="analytics-item">
+                    <span class="analytics-number" id="openOrders">-</span>
+                    <span class="analytics-label">{{ _("Open Orders") }}</span>
+                </div>
+                <div class="analytics-item">
+                    <span class="analytics-number" id="itemsToReorder">-</span>
+                    <span class="analytics-label">{{ _("Items to Reorder") }}</span>
+                </div>
+                <div class="analytics-item">
+                    <span class="analytics-number" id="monthlyValue">$0</span>
+                    <span class="analytics-label">{{ _("Monthly Purchases") }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <div class="sidebar-title">{{ _("Quick Actions") }}</div>
+            <button class="action-btn" onclick="showReorderItems()">
+                <div class="action-icon">🔄</div>
+                <div class="action-name">{{ _("Items to Reorder") }}</div>
+            </button>
+            <button class="action-btn" onclick="showAllSuppliers()">
+                <div class="action-icon">🏢</div>
+                <div class="action-name">{{ _("All Suppliers") }}</div>
+            </button>
+            <button class="action-btn" onclick="showPendingRequisitions()">
+                <div class="action-icon">📋</div>
+                <div class="action-name">{{ _("Pending Requests") }}</div>
+            </button>
+        </div>
+        
+        <div class="sidebar-title">{{ _("Suppliers") }}</div>
+        
+        {% for supplier in suppliers[:10] %}
+        <div class="supplier-btn" data-supplier="{{ supplier.name }}" onclick="selectSupplier('{{ supplier.name|e }}')">
+            <div class="supplier-icon">
+                {% set supplier_name_lower = supplier.supplier_name.lower() %}
+                {% if 'vinyl' in supplier_name_lower %}🏗️
+                {% elif 'aluminum' in supplier_name_lower %}⚡
+                {% elif 'wood' in supplier_name_lower %}🌲
+                {% elif 'hardware' in supplier_name_lower %}🔧
+                {% else %}{{ supplier.supplier_name[:1] }}
+                {% endif %}
+            </div>
+            <div class="supplier-details">
+                <div class="supplier-name">{{ _(supplier.supplier_name) }}</div>
+                <div class="supplier-group">{{ _(supplier.supplier_group or '') }}</div>
+            </div>
+        </div>
+        {% endfor %}
+        
+        {% if suppliers|length > 10 %}
+        <div class="more-suppliers">
+            <button onclick="showAllSuppliers()">{{ _("View All Suppliers") }} ({{ suppliers|length }})</button>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Main Content Panel -->
+    <div class="left-panel">
+        <!-- Header -->
+        <div class="purchasing-header">
+            <div class="purchasing-title">{{ _("H&J Fence Supply Purchasing") }}</div>
+            <div class="header-controls">
+                <div class="user-info">
+                    <span class="user-name">{{ frappe.session.user }}</span>
+                    <span class="user-department" id="userDepartment"></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Supplier Section -->
+        <div class="supplier-section">
+            <div class="supplier-info">
+                <div class="current-supplier" id="currentSupplier">{{ _("All Suppliers") }}</div>
+                <div class="supplier-details" id="supplierDetails">{{ _("Browse products from all suppliers") }}</div>
+            </div>
+            <div>
+                <button class="supplier-lookup-btn" onclick="openSupplierSearch()">{{ _("Select Supplier") }}</button>
+                <button class="clear-supplier-btn" onclick="clearSupplier()" style="margin-left: 10px;">{{ _("Clear") }}</button>
+            </div>
+        </div>
+        
+        <!-- Search Bar -->
+        <div class="search-bar">
+            <input type="text" class="search-input" placeholder="{{ _('Search items to purchase...') }}" id="searchInput">
+            <div class="search-filters">
+                <select id="itemGroupFilter" onchange="applyFilters()">
+                    <option value="">{{ _("All Categories") }}</option>
+                    {% for group in item_groups %}
+                    <option value="{{ group.name }}">{{ group.item_group_name }}</option>
+                    {% endfor %}
+                </select>
+                <select id="stockFilter" onchange="applyFilters()">
+                    <option value="">{{ _("All Items") }}</option>
+                    <option value="low_stock">{{ _("Low Stock Only") }}</option>
+                    <option value="out_of_stock">{{ _("Out of Stock Only") }}</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Items Section -->
+        <div class="items-section">
+            <!-- Items Grid -->
+            <div id="itemsView">
+                <div class="section-title" id="itemsTitle">{{ _("Select Items to Purchase") }}</div>
+                <div id="itemsContainer">
+                    <div class="loading-message">{{ _("Loading items...") }}</div>
+                </div>
+            </div>
+            
+            <!-- Reorder Items View -->
+            <div id="reorderView" style="display: none;">
+                <div class="section-title">{{ _("Items Below Reorder Level") }}</div>
+                <div id="reorderContainer">
+                    <!-- Reorder items will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Purchase Cart Panel -->
+    <div class="right-panel">
+        <div class="cart-header">
+            <div class="cart-title">{{ _("Purchase Cart") }}</div>
+            <div class="requisition-info" id="requisitionInfo">
+                <span id="requisitionName">{{ _("Draft Material Request") }}</span>
+            </div>
+        </div>
+        
+        <div class="cart-items" id="cartItems">
+            <div class="empty-cart">{{ _("No items in cart") }}</div>
+        </div>
+        
+        <div class="cart-total">
+            <div class="total-row">
+                <span>{{ _("Total Items:") }}</span>
+                <span id="totalItems">0</span>
+            </div>
+            <div class="total-row">
+                <span>{{ _("Total Quantity:") }}</span>
+                <span id="totalQty">0</span>
+            </div>
+            <div class="total-row grand-total">
+                <span>{{ _("Total Amount:") }}</span>
+                <span id="grandTotal">$0.00</span>
+            </div>
+        </div>
+        
+        <!-- Purchase Actions -->
+        <div class="purchase-actions">
+            <button class="action-btn primary" onclick="submitRequisition()">
+                {{ _("Submit Material Request") }}
+            </button>
+            <button class="action-btn secondary" onclick="saveDraft()">
+                {{ _("Save Draft") }}
+            </button>
+            <button class="action-btn secondary" onclick="createPurchaseOrder()" id="createPOBtn" style="display: none;">
+                {{ _("Create Purchase Order") }}
+            </button>
+            <button class="action-btn danger" onclick="clearCart()">
+                {{ _("Clear Cart") }}
+            </button>
+        </div>
+        
+        <!-- Purchase Options -->
+        <div class="purchase-options">
+            <div class="option-group">
+                <label for="expectedDelivery">{{ _("Expected Delivery Date") }}</label>
+                <input type="date" id="expectedDelivery" class="form-control">
+            </div>
+            <div class="option-group">
+                <label for="purchaseReason">{{ _("Purchase Reason") }}</label>
+                <select id="purchaseReason" class="form-control">
+                    <option value="stock_replenishment">{{ _("Stock Replenishment") }}</option>
+                    <option value="new_project">{{ _("New Project") }}</option>
+                    <option value="emergency">{{ _("Emergency Purchase") }}</option>
+                    <option value="maintenance">{{ _("Maintenance") }}</option>
+                    <option value="other">{{ _("Other") }}</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Supplier Search Modal -->
+<div class="supplier-search-overlay" id="supplierSearchOverlay">
+    <div class="supplier-search-modal">
+        <div class="supplier-search-header">{{ _("Select Supplier") }}</div>
+        <input type="text" class="supplier-search-input" id="supplierSearchInput" placeholder="{{ _('Search suppliers...') }}">
+        <div class="supplier-list" id="supplierList">
+            <!-- Supplier list will be populated here -->
+        </div>
+        <div class="supplier-search-actions">
+            <button class="supplier-search-cancel" onclick="closeSupplierSearch()">{{ _("Cancel") }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Item Detail Modal -->
+<div class="item-detail-overlay" id="itemDetailOverlay">
+    <div class="item-detail-modal">
+        <div class="item-detail-header">
+            <h3 id="itemDetailTitle">{{ _("Item Details") }}</h3>
+            <button class="close-btn" onclick="closeItemDetail()">&times;</button>
+        </div>
+        <div class="item-detail-content" id="itemDetailContent">
+            <!-- Item details will be populated here -->
+        </div>
+        <div class="item-detail-actions">
+            <div class="quantity-section">
+                <label for="itemQuantity">{{ _("Quantity") }}</label>
+                <input type="number" id="itemQuantity" value="1" min="1" step="1">
+                <span id="itemUOM">Nos</span>
+            </div>
+            <button class="add-to-cart-btn" onclick="addSelectedItemToCart()">{{ _("Add to Cart") }}</button>
+            <button class="cancel-btn" onclick="closeItemDetail()">{{ _("Cancel") }}</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script type="text/javascript" src="/purchasing/purchasing.js"></script>
+{% endblock %}
+

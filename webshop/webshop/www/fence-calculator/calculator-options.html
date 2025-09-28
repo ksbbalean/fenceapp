@@ -1,0 +1,429 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _('Fence Calculator - H&J Fence Supply') }}{% endblock %}
+
+{% block head_include %}
+<meta name="description" content="Professional fence calculator tools - Get instant estimates for vinyl, wood, aluminum, and chain link fences. Multiple calculator interfaces available.">
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: #333;
+    }
+
+    .hero-section {
+        text-align: center;
+        padding: 80px 20px 60px;
+        color: white;
+    }
+
+    .hero-section h1 {
+        font-size: 3.5rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .hero-section p {
+        font-size: 1.3rem;
+        opacity: 0.9;
+        max-width: 600px;
+        margin: 0 auto 40px;
+        line-height: 1.6;
+    }
+
+    .calculator-grid {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 30px;
+        padding: 0 20px 80px;
+    }
+
+    .calculator-card {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+        overflow: hidden;
+        transition: all 0.4s ease;
+        position: relative;
+        border: 3px solid transparent;
+    }
+
+    .calculator-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 30px 80px rgba(0,0,0,0.15);
+    }
+
+    .calculator-card.featured {
+        border-color: #e74c3c;
+        transform: scale(1.05);
+    }
+
+    .calculator-card.featured:hover {
+        transform: scale(1.05) translateY(-10px);
+    }
+
+    .new-badge {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: #e74c3c;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        text-transform: uppercase;
+        z-index: 10;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+
+    .card-header {
+        padding: 40px 30px 30px;
+        text-align: center;
+        position: relative;
+    }
+
+    .card-icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+        display: block;
+    }
+
+    .card-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 10px;
+        color: #2c3e50;
+    }
+
+    .card-subtitle {
+        font-size: 1rem;
+        color: #666;
+        margin-bottom: 20px;
+        font-weight: 500;
+    }
+
+    .card-description {
+        color: #777;
+        line-height: 1.6;
+        margin-bottom: 25px;
+    }
+
+    .feature-list {
+        list-style: none;
+        padding: 0 30px;
+        margin-bottom: 30px;
+    }
+
+    .feature-list li {
+        display: flex;
+        align-items: center;
+        padding: 8px 0;
+        color: #555;
+        font-size: 0.95rem;
+    }
+
+    .feature-list li::before {
+        content: '✓';
+        color: #27ae60;
+        font-weight: bold;
+        margin-right: 12px;
+        font-size: 1.1rem;
+    }
+
+    .card-footer {
+        padding: 0 30px 40px;
+    }
+
+    .calculator-btn {
+        width: 100%;
+        padding: 16px 24px;
+        border: none;
+        border-radius: 12px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #3498db, #2980b9);
+        color: white;
+    }
+
+    .btn-featured {
+        background: linear-gradient(135deg, #e74c3c, #c0392b);
+        color: white;
+        font-size: 1.2rem;
+        padding: 18px 24px;
+    }
+
+    .btn-success {
+        background: linear-gradient(135deg, #27ae60, #229954);
+        color: white;
+    }
+
+    .btn-warning {
+        background: linear-gradient(135deg, #f39c12, #d68910);
+        color: white;
+    }
+
+    .calculator-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+
+    .calculator-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+    }
+
+    .calculator-btn:hover::before {
+        left: 100%;
+    }
+
+    .company-info {
+        background: rgba(255,255,255,0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 40px;
+        margin: 40px auto 0;
+        max-width: 800px;
+        text-align: center;
+        color: white;
+    }
+
+    .company-info h3 {
+        font-size: 1.8rem;
+        margin-bottom: 20px;
+        font-weight: 600;
+    }
+
+    .company-info p {
+        line-height: 1.7;
+        opacity: 0.9;
+        font-size: 1.1rem;
+        margin-bottom: 15px;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 30px;
+        margin-top: 40px;
+        padding-top: 30px;
+        border-top: 1px solid rgba(255,255,255,0.3);
+    }
+
+    .stat-item {
+        text-align: center;
+    }
+
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        opacity: 0.8;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    @media (max-width: 768px) {
+        .hero-section h1 {
+            font-size: 2.5rem;
+        }
+
+        .hero-section p {
+            font-size: 1.1rem;
+        }
+
+        .calculator-grid {
+            grid-template-columns: 1fr;
+            gap: 20px;
+            padding: 0 15px 60px;
+        }
+
+        .calculator-card.featured {
+            transform: none;
+        }
+
+        .calculator-card.featured:hover {
+            transform: translateY(-10px);
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="hero-section">
+    <h1>🏠 H&J Fence Calculator</h1>
+    <p>Professional fence estimation tools designed for contractors, customers, and sales teams. Choose the perfect calculator for your needs.</p>
+</div>
+
+<div class="calculator-grid">
+    <!-- NEW: Guided Fence Wizard -->
+    <div class="calculator-card featured">
+        <div class="new-badge">NEW!</div>
+        <div class="card-header">
+            <span class="card-icon">🧙‍♂️</span>
+            <h3 class="card-title">Guided Fence Wizard</h3>
+            <p class="card-subtitle">Step-by-Step Professional Experience</p>
+            <p class="card-description">The easiest way to get a fence estimate! Just like the tools used by professional fence companies. Perfect for homeowners and first-time fence buyers.</p>
+        </div>
+        <ul class="feature-list">
+            <li>✨ Step-by-step guided process</li>
+            <li>🎯 Smart material selection wizard</li>
+            <li>🗺️ Interactive map-based drawing</li>
+            <li>📧 Email estimates to customers</li>
+            <li>📱 Perfect mobile experience</li>
+            <li>🏆 Recommended for all users</li>
+        </ul>
+        <div class="card-footer">
+            <a href="/fence-calculator/guided-fence-wizard" class="calculator-btn btn-featured">
+                Start Guided Wizard →
+            </a>
+        </div>
+    </div>
+    
+    <!-- Advanced Drawing Calculator -->
+    <div class="calculator-card">
+        <div class="card-header">
+            <span class="card-icon">🎨</span>
+            <h3 class="card-title">Advanced Drawing Calculator</h3>
+            <p class="card-subtitle">Professional CAD-Like Experience</p>
+            <p class="card-description">Professional SVG-based drawing interface with precision tools, smart snapping, and real-time calculations. Perfect for complex projects.</p>
+        </div>
+        <ul class="feature-list">
+            <li>Interactive SVG fence drawing</li>
+            <li>Smart snapping & magnetic guides</li>
+            <li>Professional measurement tools</li>
+            <li>Real-time material calculations</li>
+            <li>Precision input modes</li>
+            <li>Copy/paste/undo operations</li>
+        </ul>
+        <div class="card-footer">
+            <a href="/fence-calculator/advanced-fence-calculator" class="calculator-btn btn-primary">
+                Launch Advanced Calculator
+            </a>
+        </div>
+    </div>
+    
+    <!-- Simple Canvas Calculator -->
+    <div class="calculator-card">
+        <div class="card-header">
+            <span class="card-icon">🖊️</span>
+            <h3 class="card-title">Simple Drawing Calculator</h3>
+            <p class="card-subtitle">Quick & Easy Sketching</p>
+            <p class="card-description">Basic HTML5 Canvas drawing interface for quick fence layout sketches and estimates. Simple and straightforward.</p>
+        </div>
+        <ul class="feature-list">
+            <li>Simple fence line drawing</li>
+            <li>Basic measurement tools</li>
+            <li>Quick material estimates</li>
+            <li>Easy to learn interface</li>
+            <li>Mobile-friendly controls</li>
+            <li>Fast loading</li>
+        </ul>
+        <div class="card-footer">
+            <a href="/fence-calculator/" class="calculator-btn btn-success">
+                Open Simple Calculator
+            </a>
+        </div>
+    </div>
+    
+    <!-- Mobile POS Interface -->
+    <div class="calculator-card">
+        <div class="card-header">
+            <span class="card-icon">📱</span>
+            <h3 class="card-title">POS Interface</h3>
+            <p class="card-subtitle">Touch-Optimized Sales Tool</p>
+            <p class="card-description">Point-of-Sale interface designed specifically for tablets and mobile sales teams. Touch-optimized for in-person sales.</p>
+        </div>
+        <ul class="feature-list">
+            <li>Touch-optimized controls</li>
+            <li>Quick product selection</li>
+            <li>Instant pricing calculations</li>
+            <li>Mobile-first responsive design</li>
+            <li>Sales team workflow</li>
+            <li>Offline capabilities</li>
+        </ul>
+        <div class="card-footer">
+            <a href="/pos/" class="calculator-btn btn-warning">
+                Open POS Interface
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="company-info">
+    <h3>🏢 About H&J Fence Supply</h3>
+    <p>
+        H&J Fence Supply is your trusted partner for professional fence installation and materials. 
+        Our advanced calculator tools help you get accurate estimates for any fence project, 
+        from residential privacy fences to commercial security installations.
+    </p>
+    <p>
+        <strong>🧙‍♂️ Try our new Guided Fence Wizard</strong> for the easiest fence estimation experience - 
+        just like the tools used by professional fence companies nationwide!
+    </p>
+    
+    <div class="stats-grid">
+        <div class="stat-item">
+            <span class="stat-number">25+</span>
+            <span class="stat-label">Years Experience</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">10K+</span>
+            <span class="stat-label">Projects Completed</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">4.9★</span>
+            <span class="stat-label">Customer Rating</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">24/7</span>
+            <span class="stat-label">Support Available</span>
+        </div>
+    </div>
+</div>
+{% endblock %}

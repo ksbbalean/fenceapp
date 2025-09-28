@@ -89,6 +89,14 @@
 				</div>
 			</div>
 
+			<!-- Shipping Options Section -->
+			<div id="cart-shipping-section" class="mb-3 frappe-card p-5" style="display: none;">
+				<h5>{{ _("Shipping Options") }}</h5>
+				<div id="cart-shipping-content">
+					<div class="loading-shipping">{{ _("Loading shipping options...") }}</div>
+				</div>
+			</div>
+
 			<div class="cart-payment-addresses">
 				<!-- Apply Coupon Code  -->
 				{% set show_coupon_code = cart_settings.show_apply_coupon_code_in_website and cart_settings.enable_checkout %}

@@ -1,0 +1,445 @@
+{
+	"actions": [],
+	"allow_rename": 1,
+	"autoname": "naming_series:",
+	"creation": "2024-01-23 14:40:00.000000",
+	"default_view": "List",
+	"doctype": "DocType",
+	"editable_grid": 1,
+	"engine": "InnoDB",
+	"field_order": [
+		"naming_series",
+		"project_name",
+		"column_break_3",
+		"project_code",
+		"status",
+		"customer_details_section",
+		"customer_name",
+		"customer_email",
+		"customer_phone",
+		"column_break_9",
+		"customer_address",
+		"installation_address",
+		"project_details_section",
+		"fence_style",
+		"fence_color",
+		"total_length",
+		"column_break_15",
+		"estimated_cost",
+		"final_cost",
+		"profit_margin",
+		"design_data_section",
+		"drawing_data",
+		"fence_segments",
+		"calculations_section",
+		"total_panels",
+		"total_posts",
+		"total_gates",
+		"column_break_24",
+		"corner_posts",
+		"end_posts",
+		"line_posts",
+		"material_breakdown_section",
+		"material_list",
+		"quote_details_section",
+		"quote_version",
+		"quote_generated",
+		"quote_sent",
+		"column_break_32",
+		"quote_accepted",
+		"quote_file",
+		"contractor_assignment_section",
+		"assigned_contractor",
+		"contractor_company",
+		"assignment_date",
+		"column_break_38",
+		"contractor_notes",
+		"project_timeline_section",
+		"created_date",
+		"estimated_start_date",
+		"estimated_completion_date",
+		"column_break_43",
+		"actual_start_date",
+		"actual_completion_date",
+		"system_details_section",
+		"created_by",
+		"last_modified_by",
+		"column_break_48",
+		"source",
+		"notes"
+	],
+	"fields": [
+		{
+			"fieldname": "naming_series",
+			"fieldtype": "Select",
+			"label": "Naming Series",
+			"options": "FENCE-PROJ-.YYYY.-",
+			"reqd": 1
+		},
+		{
+			"fieldname": "project_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Project Name",
+			"reqd": 1
+		},
+		{
+			"fieldname": "column_break_3",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "project_code",
+			"fieldtype": "Data",
+			"label": "Project Code",
+			"read_only": 1
+		},
+		{
+			"fieldname": "status",
+			"fieldtype": "Select",
+			"in_list_view": 1,
+			"label": "Status",
+			"options": "Draft\nQuote Requested\nQuote Sent\nQuote Accepted\nIn Progress\nCompleted\nCancelled",
+			"reqd": 1
+		},
+		{
+			"fieldname": "customer_details_section",
+			"fieldtype": "Section Break",
+			"label": "Customer Details"
+		},
+		{
+			"fieldname": "customer_name",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Customer Name",
+			"reqd": 1
+		},
+		{
+			"fieldname": "customer_email",
+			"fieldtype": "Data",
+			"label": "Customer Email",
+			"options": "Email"
+		},
+		{
+			"fieldname": "customer_phone",
+			"fieldtype": "Data",
+			"label": "Customer Phone"
+		},
+		{
+			"fieldname": "column_break_9",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "customer_address",
+			"fieldtype": "Small Text",
+			"label": "Customer Address"
+		},
+		{
+			"fieldname": "installation_address",
+			"fieldtype": "Small Text",
+			"label": "Installation Address"
+		},
+		{
+			"fieldname": "project_details_section",
+			"fieldtype": "Section Break",
+			"label": "Project Details"
+		},
+		{
+			"fieldname": "fence_style",
+			"fieldtype": "Data",
+			"in_list_view": 1,
+			"label": "Fence Style",
+			"reqd": 1
+		},
+		{
+			"fieldname": "fence_color",
+			"fieldtype": "Data",
+			"label": "Fence Color"
+		},
+		{
+			"fieldname": "total_length",
+			"fieldtype": "Float",
+			"label": "Total Length (ft)",
+			"precision": "2",
+			"reqd": 1
+		},
+		{
+			"fieldname": "column_break_15",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "estimated_cost",
+			"fieldtype": "Currency",
+			"label": "Estimated Cost"
+		},
+		{
+			"fieldname": "final_cost",
+			"fieldtype": "Currency",
+			"label": "Final Cost"
+		},
+		{
+			"fieldname": "profit_margin",
+			"fieldtype": "Percent",
+			"label": "Profit Margin"
+		},
+		{
+			"fieldname": "design_data_section",
+			"fieldtype": "Section Break",
+			"label": "Design Data"
+		},
+		{
+			"fieldname": "drawing_data",
+			"fieldtype": "Long Text",
+			"label": "Drawing Data (JSON)"
+		},
+		{
+			"fieldname": "fence_segments",
+			"fieldtype": "Table",
+			"label": "Fence Segments",
+			"options": "Fence Segment"
+		},
+		{
+			"fieldname": "calculations_section",
+			"fieldtype": "Section Break",
+			"label": "Calculations"
+		},
+		{
+			"fieldname": "total_panels",
+			"fieldtype": "Int",
+			"label": "Total Panels"
+		},
+		{
+			"fieldname": "total_posts",
+			"fieldtype": "Int",
+			"label": "Total Posts"
+		},
+		{
+			"fieldname": "total_gates",
+			"fieldtype": "Int",
+			"label": "Total Gates"
+		},
+		{
+			"fieldname": "column_break_24",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "corner_posts",
+			"fieldtype": "Int",
+			"label": "Corner Posts"
+		},
+		{
+			"fieldname": "end_posts",
+			"fieldtype": "Int",
+			"label": "End Posts"
+		},
+		{
+			"fieldname": "line_posts",
+			"fieldtype": "Int",
+			"label": "Line Posts"
+		},
+		{
+			"fieldname": "material_breakdown_section",
+			"fieldtype": "Section Break",
+			"label": "Material Breakdown"
+		},
+		{
+			"fieldname": "material_list",
+			"fieldtype": "Table",
+			"label": "Material List",
+			"options": "Fence Material"
+		},
+		{
+			"fieldname": "quote_details_section",
+			"fieldtype": "Section Break",
+			"label": "Quote Details"
+		},
+		{
+			"fieldname": "quote_version",
+			"fieldtype": "Int",
+			"label": "Quote Version"
+		},
+		{
+			"fieldname": "quote_generated",
+			"fieldtype": "Check",
+			"label": "Quote Generated"
+		},
+		{
+			"fieldname": "quote_sent",
+			"fieldtype": "Datetime",
+			"label": "Quote Sent"
+		},
+		{
+			"fieldname": "column_break_32",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "quote_accepted",
+			"fieldtype": "Datetime",
+			"label": "Quote Accepted"
+		},
+		{
+			"fieldname": "quote_file",
+			"fieldtype": "Attach",
+			"label": "Quote File"
+		},
+		{
+			"fieldname": "contractor_assignment_section",
+			"fieldtype": "Section Break",
+			"label": "Contractor Assignment"
+		},
+		{
+			"fieldname": "assigned_contractor",
+			"fieldtype": "Link",
+			"label": "Assigned Contractor",
+			"options": "Fence User Profile"
+		},
+		{
+			"fieldname": "contractor_company",
+			"fieldtype": "Link",
+			"label": "Contractor Company",
+			"options": "Fence Company"
+		},
+		{
+			"fieldname": "assignment_date",
+			"fieldtype": "Date",
+			"label": "Assignment Date"
+		},
+		{
+			"fieldname": "column_break_38",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "contractor_notes",
+			"fieldtype": "Text",
+			"label": "Contractor Notes"
+		},
+		{
+			"fieldname": "project_timeline_section",
+			"fieldtype": "Section Break",
+			"label": "Project Timeline"
+		},
+		{
+			"fieldname": "created_date",
+			"fieldtype": "Date",
+			"label": "Created Date",
+			"read_only": 1
+		},
+		{
+			"fieldname": "estimated_start_date",
+			"fieldtype": "Date",
+			"label": "Estimated Start Date"
+		},
+		{
+			"fieldname": "estimated_completion_date",
+			"fieldtype": "Date",
+			"label": "Estimated Completion Date"
+		},
+		{
+			"fieldname": "column_break_43",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "actual_start_date",
+			"fieldtype": "Date",
+			"label": "Actual Start Date"
+		},
+		{
+			"fieldname": "actual_completion_date",
+			"fieldtype": "Date",
+			"label": "Actual Completion Date"
+		},
+		{
+			"fieldname": "system_details_section",
+			"fieldtype": "Section Break",
+			"label": "System Details"
+		},
+		{
+			"fieldname": "created_by",
+			"fieldtype": "Link",
+			"label": "Created By",
+			"options": "User",
+			"read_only": 1
+		},
+		{
+			"fieldname": "last_modified_by",
+			"fieldtype": "Link",
+			"label": "Last Modified By",
+			"options": "User",
+			"read_only": 1
+		},
+		{
+			"fieldname": "column_break_48",
+			"fieldtype": "Column Break"
+		},
+		{
+			"fieldname": "source",
+			"fieldtype": "Select",
+			"label": "Source",
+			"options": "Web Calculator\nManual Entry\nImport"
+		},
+		{
+			"fieldname": "notes",
+			"fieldtype": "Text",
+			"label": "Notes"
+		}
+	],
+	"index_web_pages_for_search": 1,
+	"links": [],
+	"modified": "2024-01-23 14:40:00.000000",
+	"modified_by": "Administrator",
+	"module": "Webshop",
+	"name": "Fence Project",
+	"naming_rule": "By \"Naming Series\" field",
+	"owner": "Administrator",
+	"permissions": [
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "System Manager",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"create": 1,
+			"delete": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Fence Admin",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"create": 1,
+			"email": 1,
+			"export": 1,
+			"print": 1,
+			"read": 1,
+			"report": 1,
+			"role": "Fence Employee",
+			"share": 1,
+			"write": 1
+		},
+		{
+			"read": 1,
+			"role": "Fence Contractor",
+			"if_owner": 1
+		},
+		{
+			"read": 1,
+			"role": "Fence Customer",
+			"if_owner": 1
+		}
+	],
+	"quick_entry": 1,
+	"sort_field": "modified",
+	"sort_order": "DESC",
+	"states": [],
+	"track_changes": 1
+}

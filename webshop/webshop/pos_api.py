@@ -6,6 +6,7 @@ Integrates with existing webshop infrastructure
 import frappe
 from frappe import _
 from webshop.webshop.shopping_cart import cart
+from webshop.webshop.shopping_cart.cart import get_party
 from webshop.webshop.api import get_product_filter_data
 
 def get_attribute_name_mapping():
@@ -55,6 +56,7 @@ def get_attribute_name_mapping():
 
 @frappe.whitelist()
 def get_fence_items_for_pos(category=None, height=None, color=None, style=None, railType=None, price_list=None):
+    print(f"🔥 POS API CALLED WITH PRICE LIST: {price_list}")
     """Get fence items for POS using SIMPLE filtering: custom_material_type -> custom_style -> sort by custom_material_class"""
     
     try:
@@ -72,9 +74,20 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
         
         # PRIMARY FILTER: custom_material_type
         if category:
-            where_conditions.append("i.custom_material_type = %s")
+            # For Cap and Hardware items, also check custom_type_of_material field
+            where_conditions.append("""
+                (i.custom_material_type = %s 
+                OR (i.custom_material_class IN ('Cap', 'Hardware') 
+                    AND i.name IN (
+                        SELECT parent 
+                        FROM `tabCustom Type Of Material` 
+                        WHERE material_type = %s
+                    )
+                ))
+            """)
             query_params.append(category)
-            frappe.logger().info(f"POS API Debug - Primary filter (custom_material_type): '{category}'")
+            query_params.append(category)
+            frappe.logger().info(f"POS API Debug - Primary filter (custom_material_type): '{category}' (including custom_type_of_material for Cap/Hardware)")
         
         # SECONDARY FILTER: custom_style (but exclude Hardware and Caps from style filtering)
         if style:
@@ -215,6 +228,12 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
                 item_price = get_item_price_for_pos(item.name, price_list)
                 if item_price:
                     formatted_item["pos_price"] = item_price
+                    formatted_item["price_list_rate"] = item_price  # Frontend compatibility
+                    print(f"✅ Price found for {item.name}: {item_price} in {price_list}")
+                else:
+                    print(f"❌ No price found for {item.name} in {price_list}")
+                    formatted_item["price_list_rate"] = 0
+                    formatted_item["pos_price"] = 0
             
             # Add stock information
             formatted_item["stock_qty"] = get_item_stock_qty(item.name)
@@ -225,7 +244,11 @@ def get_fence_items_for_pos(category=None, height=None, color=None, style=None, 
             formatted_items.append(formatted_item)
         
         frappe.logger().info(f"POS API Debug - Final formatted items: {len(formatted_items)}")
-        return {"items": formatted_items, "item_count": len(formatted_items)}
+        return {
+            "items": formatted_items, 
+            "item_count": len(formatted_items),
+            "debug_price_list": price_list
+        }
         
     except Exception as e:
         frappe.log_error(f"Error in get_fence_items_for_pos: {str(e)}")
@@ -395,6 +418,12 @@ def get_popular_items_for_pos(price_list=None, material_type=None):
                 item_price = get_item_price_for_pos(item.name, price_list)
                 if item_price:
                     formatted_item["pos_price"] = item_price
+                    formatted_item["price_list_rate"] = item_price  # Frontend compatibility
+                    print(f"✅ Price found for {item.name}: {item_price} in {price_list}")
+                else:
+                    print(f"❌ No price found for {item.name} in {price_list}")
+                    formatted_item["price_list_rate"] = 0
+                    formatted_item["pos_price"] = 0
             
             # Add stock information
             formatted_item["stock_qty"] = get_item_stock_qty(item.name)
@@ -404,7 +433,11 @@ def get_popular_items_for_pos(price_list=None, material_type=None):
             
             formatted_items.append(formatted_item)
         
-        return {"items": formatted_items, "item_count": len(formatted_items)}
+        return {
+            "items": formatted_items, 
+            "item_count": len(formatted_items),
+            "debug_price_list": price_list
+        }
         
     except Exception as e:
         frappe.log_error(f"Error in get_popular_items_for_pos: {str(e)}")
@@ -556,7 +589,11 @@ def get_template_items_for_pos(category=None):
             }
             formatted_items.append(formatted_item)
         
-        return {"items": formatted_items, "item_count": len(formatted_items)}
+        return {
+            "items": formatted_items, 
+            "item_count": len(formatted_items),
+            "debug_price_list": price_list
+        }
         
     except Exception as e:
         frappe.log_error(f"Error in get_template_items_for_pos: {str(e)}")
@@ -607,8 +644,31 @@ def get_item_price_for_pos(item_code, price_list):
         }, "price_list_rate")
         
         if not price:
-            # Fall back to standard selling price
-            price = frappe.get_value("Item", item_code, "standard_rate")
+            # Smart fallback: try other enabled price lists from the system
+            try:
+                other_price_lists = frappe.get_all("Price List", 
+                    filters={"enabled": 1}, 
+                    fields=["name"], 
+                    pluck="name"
+                )
+                
+                for fallback_list in other_price_lists:
+                    if fallback_list == price_list:
+                        continue  # Already tried
+                        
+                    try:
+                        price = frappe.get_value("Item Price", {
+                            "item_code": item_code,
+                            "price_list": fallback_list
+                        }, "price_list_rate")
+                        
+                        if price:
+                            frappe.logger().info(f"Found fallback price for {item_code} in {fallback_list}: {price}")
+                            break
+                    except Exception:
+                        continue
+            except Exception as e:
+                frappe.logger().error(f"Error getting fallback price lists: {str(e)}")
         
         return float(price) if price else 0.0
         
@@ -704,26 +764,310 @@ def add_fence_item_to_cart(item_code, qty=1, customer=None, price_list=None):
 def update_cart_pricing(price_list):
     """Update cart pricing based on price list"""
     try:
-        quotation = cart.get_cart_quotation()
-        if not quotation:
-            return
+        print(f"🏷️ POS API: Updating cart pricing to {price_list}")
         
-        doc = frappe.get_doc("Quotation", quotation.name)
+        # Get cart quotation with better error handling
+        cart_response = cart.get_cart_quotation()
+        print(f"🔍 POS API: Cart response: {cart_response}")
+        
+        if not cart_response:
+            print("❌ POS API: No cart response received")
+            return {"message": "No cart found - please add items to cart first"}
+        
+        # Handle different response formats
+        quotation_doc = None
+        if hasattr(cart_response, 'doc'):
+            quotation_doc = cart_response.doc
+        elif isinstance(cart_response, dict) and 'doc' in cart_response:
+            quotation_doc = cart_response['doc']
+        elif isinstance(cart_response, dict) and 'message' in cart_response:
+            # Sometimes the response is wrapped in a message
+            if isinstance(cart_response['message'], dict) and 'doc' in cart_response['message']:
+                quotation_doc = cart_response['message']['doc']
+            else:
+                quotation_doc = cart_response['message']
+        
+        if not quotation_doc:
+            print("❌ POS API: No quotation document found in response")
+            return {"message": "No cart found - please add items to cart first"}
+        
+        # Get quotation name
+        quotation_name = None
+        if hasattr(quotation_doc, 'name'):
+            quotation_name = quotation_doc.name
+        elif isinstance(quotation_doc, dict) and 'name' in quotation_doc:
+            quotation_name = quotation_doc['name']
+        
+        if not quotation_name:
+            print("❌ POS API: No quotation name found")
+            return {"message": "Invalid cart document - no quotation name"}
+        
+        print(f"📋 POS API: Found cart {quotation_name}")
+        
+        # Get the quotation document
+        try:
+            doc = frappe.get_doc("Quotation", quotation_name)
+        except Exception as e:
+            print(f"❌ POS API: Error getting quotation {quotation_name}: {str(e)}")
+            return {"message": f"Cart not found: {str(e)}"}
+        
+        # Force update price list - this is critical for POS
+        old_price_list = doc.selling_price_list
         doc.selling_price_list = price_list
+        print(f"🔄 POS API: Price list changed from {old_price_list} to {price_list}")
         
-        # Recalculate prices
+        # Reset pricing rule effects to prevent incremental increases
+        doc.ignore_pricing_rule = 1  # Temporarily ignore pricing rules
+        doc.discount_amount = 0
+        doc.additional_discount_percentage = 0
+        doc.coupon_code = ""
+        
+        print(f"🔄 POS API: Updating {len(doc.items)} items to price list {price_list}")
+        
+        # Recalculate prices and update quantities to trigger price refresh
         for item in doc.items:
+            old_rate = item.rate
             new_rate = get_item_price_for_pos(item.item_code, price_list)
             if new_rate:
                 item.rate = new_rate
                 item.amount = new_rate * item.qty
+                # Reset any pricing rule effects on the item
+                item.discount_percentage = 0
+                item.discount_amount = 0
+                print(f"💰 POS API: {item.item_code}: {old_rate} → {new_rate}")
+            else:
+                # If no price found, keep existing rate or set to 0
+                print(f"⚠️ POS API: No price found for {item.item_code} in {price_list}, keeping rate {old_rate}")
         
+        # Recalculate taxes and totals only once
+        doc.run_method("calculate_taxes_and_totals")
+        
+        # Force save with ignore_permissions to ensure price list change is saved
+        doc.flags.ignore_permissions = True
         doc.save()
-        return {"message": "Cart pricing updated"}
+        
+        print(f"✅ POS API: Cart pricing updated successfully to {price_list}")
+        return {"message": "Cart pricing updated successfully"}
         
     except Exception as e:
+        print(f"❌ POS API Error: {str(e)}")
         frappe.log_error(f"Error updating cart pricing: {str(e)}")
-        return {"message": "Failed to update pricing"}
+        import traceback
+        traceback.print_exc()
+        return {"message": f"Failed to update pricing: {str(e)}"}
+
+@frappe.whitelist()
+def set_cart_price_list(price_list):
+    """Set the cart price list from POS - overrides customer default"""
+    try:
+        print(f"🏷️ POS API: Setting cart price list to {price_list}")
+        
+        # Get or create cart quotation
+        cart_response = cart.get_cart_quotation()
+        
+        if not cart_response:
+            print("❌ POS API: No cart response received")
+            return {"message": "No cart found"}
+        
+        # Handle different response formats
+        quotation_doc = None
+        if hasattr(cart_response, 'doc'):
+            quotation_doc = cart_response.doc
+        elif isinstance(cart_response, dict) and 'doc' in cart_response:
+            quotation_doc = cart_response['doc']
+        elif isinstance(cart_response, dict) and 'message' in cart_response:
+            if isinstance(cart_response['message'], dict) and 'doc' in cart_response['message']:
+                quotation_doc = cart_response['message']['doc']
+            else:
+                quotation_doc = cart_response['message']
+        
+        if not quotation_doc:
+            print("❌ POS API: No quotation document found in response")
+            return {"message": "No cart found"}
+        
+        # Get quotation name
+        quotation_name = None
+        if hasattr(quotation_doc, 'name'):
+            quotation_name = quotation_doc.name
+        elif isinstance(quotation_doc, dict) and 'name' in quotation_doc:
+            quotation_name = quotation_doc['name']
+        
+        # Check if this is a local document (not yet saved)
+        is_local = False
+        if isinstance(quotation_doc, dict) and quotation_doc.get('__islocal'):
+            is_local = True
+            print(f"📋 POS API: Cart is local document (not yet saved)")
+        elif not quotation_name:
+            print("❌ POS API: No quotation name found")
+            return {"message": "Invalid cart document - no quotation name"}
+        
+        if is_local:
+            # For local documents, work directly with the quotation_doc
+            doc = quotation_doc
+            print(f"📋 POS API: Working with local cart document")
+        else:
+            print(f"📋 POS API: Setting price list for cart {quotation_name}")
+            # Get the quotation document
+            try:
+                doc = frappe.get_doc("Quotation", quotation_name)
+            except Exception as e:
+                print(f"❌ POS API: Error getting quotation {quotation_name}: {str(e)}")
+                return {"message": f"Cart not found: {str(e)}"}
+        
+        # Set the price list
+        doc.selling_price_list = price_list
+        
+        # Reset pricing rule effects to prevent incremental increases
+        doc.ignore_pricing_rule = 1  # Temporarily ignore pricing rules
+        doc.discount_amount = 0
+        doc.additional_discount_percentage = 0
+        doc.coupon_code = ""
+        
+        # If there are items, recalculate their prices
+        if doc.items:
+            print(f"🔄 POS API: Recalculating prices for {len(doc.items)} items")
+            for item in doc.items:
+                new_rate = get_item_price_for_pos(item.item_code, price_list)
+                if new_rate:
+                    item.rate = new_rate
+                    item.amount = new_rate * item.qty
+                    # Reset any pricing rule effects on the item
+                    item.discount_percentage = 0
+                    item.discount_amount = 0
+                    print(f"💰 POS API: {item.item_code}: {item.rate}")
+        
+        # Recalculate taxes and totals only once
+        if hasattr(doc, 'run_method'):
+            doc.run_method("calculate_taxes_and_totals")
+        
+        # Save the document
+        if is_local:
+            # For local documents, we can't save them directly
+            # The cart system will handle saving when items are added
+            print(f"📋 POS API: Local cart updated with price list {price_list}")
+        else:
+            doc.save()
+            print(f"✅ POS API: Cart price list set to {price_list}")
+        
+        return {"message": f"Cart price list set to {price_list}"}
+        
+    except Exception as e:
+        print(f"❌ POS API Error: {str(e)}")
+        frappe.log_error(f"Error setting cart price list: {str(e)}")
+        return {"message": f"Failed to set price list: {str(e)}"}
+
+@frappe.whitelist()
+def add_item_to_cart_with_price_list(item_code, qty=1, price_list=None):
+    """Add item to cart with specific price list - overrides customer default"""
+    try:
+        print(f"🛒 POS API: Adding {item_code} (qty: {qty}) with price list: {price_list}")
+        
+        # Use POS-specific cart creation that respects the price list from the beginning
+        result = create_pos_cart_with_price_list(item_code, qty, price_list)
+        
+        print(f"✅ POS API: Successfully added {item_code} to cart with price list {price_list}")
+        return result
+        
+    except Exception as e:
+        print(f"❌ POS API Error: {str(e)}")
+        frappe.log_error(f"Error adding item to cart with price list: {str(e)}")
+        return {"message": f"Failed to add item to cart: {str(e)}"}
+
+@frappe.whitelist()
+def create_pos_cart_with_price_list(item_code, qty=1, price_list=None):
+    """Create or update cart with POS-specific price list from the beginning"""
+    try:
+        print(f"🏗️ POS API: Creating cart with price list: {price_list}")
+        
+        # Get or create cart quotation
+        cart_response = cart.get_cart_quotation()
+        
+        if not cart_response:
+            print("❌ POS API: No cart response received")
+            return {"message": "Failed to get cart"}
+        
+        # Handle different response formats to get the quotation document
+        quotation_doc = None
+        if hasattr(cart_response, 'doc'):
+            quotation_doc = cart_response.doc
+        elif isinstance(cart_response, dict) and 'doc' in cart_response:
+            quotation_doc = cart_response['doc']
+        elif isinstance(cart_response, dict) and 'message' in cart_response:
+            if isinstance(cart_response['message'], dict) and 'doc' in cart_response['message']:
+                quotation_doc = cart_response['message']['doc']
+            else:
+                quotation_doc = cart_response['message']
+        
+        if not quotation_doc:
+            print("❌ POS API: No quotation document found in response")
+            return {"message": "Failed to get cart document"}
+        
+        # Check if this is a local document (not yet saved)
+        is_local = False
+        if isinstance(quotation_doc, dict) and quotation_doc.get('__islocal'):
+            is_local = True
+            print(f"📋 POS API: Working with local cart document")
+        else:
+            print(f"📋 POS API: Working with saved cart document")
+        
+        # Set the price list BEFORE adding the item
+        if price_list:
+            old_price_list = quotation_doc.selling_price_list
+            quotation_doc.selling_price_list = price_list
+            print(f"🏷️ POS API: Price list set from {old_price_list} to {price_list}")
+        
+        # Now add the item to the cart
+        # Check if item already exists in cart
+        existing_item = None
+        if hasattr(quotation_doc, 'items') and quotation_doc.items:
+            for item in quotation_doc.items:
+                if item.item_code == item_code:
+                    existing_item = item
+                    break
+        
+        if existing_item:
+            # Set existing item quantity to the new value (not add to it)
+            existing_item.qty = float(qty)
+            print(f"🔄 POS API: Set existing item {item_code} quantity to {existing_item.qty}")
+        else:
+            # Add new item to cart
+            warehouse = frappe.get_cached_value(
+                "Website Item", {"item_code": item_code}, "website_warehouse"
+            )
+            
+            new_item = {
+                "doctype": "Quotation Item",
+                "item_code": item_code,
+                "qty": qty,
+                "warehouse": warehouse,
+            }
+            
+            if hasattr(quotation_doc, 'append'):
+                quotation_doc.append("items", new_item)
+            else:
+                # For local documents, we might need to handle this differently
+                if not hasattr(quotation_doc, 'items'):
+                    quotation_doc.items = []
+                quotation_doc.items.append(new_item)
+            
+            print(f"➕ POS API: Added new item {item_code} with quantity {qty}")
+        
+        # Apply cart settings to recalculate prices and totals
+        if hasattr(quotation_doc, 'run_method'):
+            quotation_doc.run_method("set_missing_values")
+            quotation_doc.run_method("calculate_taxes_and_totals")
+        
+        # Force save with ignore_permissions
+        quotation_doc.flags.ignore_permissions = True
+        quotation_doc.save()
+        
+        print(f"✅ POS API: Cart created/updated with price list {price_list}")
+        return {"message": "Item added to cart successfully", "quotation": quotation_doc.name if hasattr(quotation_doc, 'name') else None}
+        
+    except Exception as e:
+        print(f"❌ POS API Error: {str(e)}")
+        frappe.log_error(f"Error creating POS cart with price list: {str(e)}")
+        return {"message": f"Failed to create cart: {str(e)}"}
 
 @frappe.whitelist()
 def create_pos_order(order_type="quote", delivery_method=None, scheduled_date=None, scheduled_time=None, customer=None):
@@ -754,7 +1098,7 @@ def create_pos_order(order_type="quote", delivery_method=None, scheduled_date=No
         
         # Convert to Sales Order if order type is "order"
         if order_type == "order":
-            sales_order = convert_quotation_to_sales_order(doc.name)
+            sales_order = convert_quotation_to_sales_order_enhanced(doc.name)
             return {
                 "message": "Order created successfully",
                 "quotation": doc.name,
@@ -772,8 +1116,8 @@ def create_pos_order(order_type="quote", delivery_method=None, scheduled_date=No
         frappe.log_error(f"Error creating POS order: {str(e)}")
         return {"message": "Failed to create order"}
 
-def convert_quotation_to_sales_order(quotation_name):
-    """Convert quotation to sales order"""
+def convert_quotation_to_sales_order_enhanced(quotation_name, submit_order=True):
+    """Convert quotation to sales order with enhanced tax and shipping preservation"""
     try:
         quotation = frappe.get_doc("Quotation", quotation_name)
         
@@ -786,8 +1130,11 @@ def convert_quotation_to_sales_order(quotation_name):
             "delivery_date": quotation.get("scheduled_date") or frappe.utils.add_days(frappe.utils.today(), 7),
             "selling_price_list": quotation.selling_price_list,
             "currency": quotation.currency,
+            "taxes_and_charges": quotation.taxes_and_charges,  # Copy tax template
             "items": []
         })
+        
+        frappe.log_error(f"DEBUG: Sales Order created with tax template: {sales_order.taxes_and_charges}", "Sales Order Tax Debug")
         
         # Copy items from quotation
         for item in quotation.items:
@@ -801,6 +1148,26 @@ def convert_quotation_to_sales_order(quotation_name):
                 "amount": item.amount
             })
         
+        # Store quotation taxes for restoration after calculate_taxes_and_totals
+        frappe.log_error(f"Quotation {quotation_name} has {len(quotation.taxes) if hasattr(quotation, 'taxes') and quotation.taxes else 0} taxes", "SO Tax Debug")
+        frappe.log_error(f"Tax template: {getattr(quotation, 'taxes_and_charges', 'None')}", "SO Tax Debug")
+        
+        # Store quotation taxes for later restoration
+        quotation_taxes = []
+        if hasattr(quotation, 'taxes') and quotation.taxes:
+            for tax in quotation.taxes:
+                quotation_taxes.append({
+                    "charge_type": tax.charge_type,
+                    "account_head": tax.account_head,
+                    "description": tax.description,
+                    "rate": getattr(tax, 'rate', None),
+                    "tax_amount": getattr(tax, 'tax_amount', None),
+                    "total": getattr(tax, 'total', None),
+                    "cost_center": getattr(tax, 'cost_center', None),
+                    "included_in_print_rate": getattr(tax, 'included_in_print_rate', 0),
+                    "included_in_paid_amount": getattr(tax, 'included_in_paid_amount', 0)
+                })
+        
         # Copy POS-specific fields
         if hasattr(quotation, 'delivery_method'):
             sales_order.delivery_method = quotation.delivery_method
@@ -809,12 +1176,53 @@ def convert_quotation_to_sales_order(quotation_name):
         if hasattr(quotation, 'scheduled_time'):
             sales_order.scheduled_time = quotation.scheduled_time
         
-        sales_order.insert()
-        sales_order.submit()
+        # DON'T call calculate_taxes_and_totals first - it clears manually copied taxes
+        # Instead, directly restore quotation taxes and then calculate once
         
-        # Update quotation status
-        quotation.status = "Ordered"
-        quotation.save()
+        frappe.log_error(f"SO before tax restore: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        
+        # Restore quotation taxes (including shipping) directly
+        if quotation_taxes:
+            frappe.log_error(f"Restoring {len(quotation_taxes)} taxes to SO", "SO Tax Debug")
+            
+            # Clear and restore all taxes from quotation
+            sales_order.set("taxes", [])
+            for tax_data in quotation_taxes:
+                # Only add fields that have values
+                clean_tax = {"charge_type": tax_data["charge_type"], "account_head": tax_data["account_head"], "description": tax_data["description"]}
+                if tax_data.get("rate"):
+                    clean_tax["rate"] = tax_data["rate"]
+                if tax_data.get("tax_amount"):
+                    clean_tax["tax_amount"] = tax_data["tax_amount"]
+                if tax_data.get("total"):
+                    clean_tax["total"] = tax_data["total"]
+                if tax_data.get("cost_center"):
+                    clean_tax["cost_center"] = tax_data["cost_center"]
+                if tax_data.get("included_in_print_rate") is not None:
+                    clean_tax["included_in_print_rate"] = tax_data["included_in_print_rate"]
+                if tax_data.get("included_in_paid_amount") is not None:
+                    clean_tax["included_in_paid_amount"] = tax_data["included_in_paid_amount"]
+                    
+                sales_order.append("taxes", clean_tax)
+            
+            frappe.log_error(f"SO after tax restore: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+            
+            # Single final calculation to update totals
+            sales_order.run_method("calculate_taxes_and_totals")
+            frappe.log_error(f"SO after final calc: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        else:
+            # No quotation taxes, use standard calculation
+            sales_order.run_method("calculate_taxes_and_totals")
+        
+        sales_order.insert()
+        frappe.log_error(f"SO {sales_order.name} created with {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        
+        if submit_order:
+            sales_order.submit()
+            
+            # Update quotation status
+            quotation.status = "Ordered"
+            quotation.save()
         
         return sales_order
         
@@ -1172,7 +1580,7 @@ def create_sample_tax_template():
                         "charge_type": "On Net Total",
                         "account_head": "Sales Tax - FS",  # You may need to adjust this
                         "description": "Sales Tax",
-                        "rate": 8.25,  # Adjust rate as needed
+                        "rate": 6.625,  # NJ sales tax rate
                         "cost_center": "Main - FS"  # You may need to adjust this
                     }
                 ]
@@ -1317,10 +1725,26 @@ def create_sample_fence_items():
 def check_product_bundle(item_code):
     """
     Check if an item is a product bundle and return bundle information
-    Whitelisted alternative to frappe.client.get_value for Product Bundle
+    Now checks both Product Bundle doctype and Product Bundle item group
     """
     try:
-        # Check if Product Bundle exists for this item
+        # First check: Is the item in the 'Product Bundle' item group?
+        item_info = frappe.db.get_value(
+            "Item",
+            {"item_code": item_code},
+            ["item_group", "item_name", "description"],
+            as_dict=True
+        )
+        
+        if item_info and item_info.item_group == "Product Bundle":
+            print(f"📦 Item {item_code} is in Product Bundle item group")
+            return {
+                "is_bundle": True,
+                "bundle_name": item_info.item_name,
+                "bundle_items": []  # Will be populated from packed_items if available
+            }
+        
+        # Second check: Check if Product Bundle doctype exists for this item
         bundle = frappe.db.get_value(
             "Product Bundle", 
             {"new_item_code": item_code}, 
@@ -1333,9 +1757,14 @@ def check_product_bundle(item_code):
             bundle_items = frappe.db.get_all(
                 "Product Bundle Item",
                 filters={"parent": bundle.name},
-                fields=["item_code", "item_name", "qty", "uom", "rate", "description"],
+                fields=["item_code", "qty", "uom", "rate", "description"],
                 order_by="idx"
             )
+            
+            # Get item names for each bundle item
+            for bundle_item in bundle_items:
+                item_name = frappe.db.get_value("Item", bundle_item.item_code, "item_name")
+                bundle_item["item_name"] = item_name
             
             return {
                 "is_bundle": True,
@@ -1355,6 +1784,718 @@ def check_product_bundle(item_code):
             "bundle_items": []
         }
 
+# =============================================================================
+# QUOTATION TEMPLATE FUNCTIONS
+# =============================================================================
+
+@frappe.whitelist()
+def save_cart_as_template(template_name, description=None, category="Standard Fence", customer_type="Both", price_list=None, template_notes=None):
+    """
+    Save current cart as a quotation template
+    """
+    try:
+        print(f"💾 Saving cart as template: {template_name}")
+        
+        # Get current cart quotation
+        cart_quotation = get_current_cart_quotation()
+        if not cart_quotation:
+            return {
+                "success": False,
+                "message": "No active cart found"
+            }
+        
+        # Check if template name already exists
+        existing_template = frappe.db.exists("Quotation Template", {"template_name": template_name})
+        if existing_template:
+            return {
+                "success": False,
+                "message": f"Template '{template_name}' already exists"
+            }
+        
+        # Create new template
+        template_doc = frappe.get_doc({
+            "doctype": "Quotation Template",
+            "template_name": template_name,
+            "description": description or f"Template created from cart on {frappe.utils.now_datetime().strftime('%Y-%m-%d %H:%M')}",
+            "category": category,
+            "customer_type": customer_type,
+            "default_price_list": price_list,
+            "created_by": frappe.session.user,
+            "created_date": frappe.utils.now_datetime(),
+            "template_notes": template_notes,
+            "is_active": 1
+        })
+        
+        # Add items from cart
+        for item in cart_quotation.items:
+            template_item = {
+                "item_code": item.item_code,
+                "item_name": item.item_name,
+                "description": item.description,
+                "qty": item.qty,
+                "uom": item.uom,
+                "rate": item.rate,
+                "amount": item.amount,
+                "additional_notes": item.additional_notes or ""
+            }
+            
+            # Check if item is a bundle
+            bundle_info = check_product_bundle(item.item_code)
+            if bundle_info.get("is_bundle"):
+                template_item["is_bundle"] = 1
+                
+                # Add bundle items
+                bundle_items = get_bundle_items_from_cart(item.item_code)
+                for bundle_item in bundle_items:
+                    template_item.setdefault("bundle_items", []).append({
+                        "item_code": bundle_item.item_code,
+                        "item_name": bundle_item.item_name,
+                        "description": bundle_item.description,
+                        "qty": bundle_item.qty,
+                        "uom": bundle_item.uom,
+                        "rate": bundle_item.rate,
+                        "amount": bundle_item.amount
+                    })
+            
+            template_doc.append("template_items", template_item)
+        
+        # Save template
+        template_doc.insert(ignore_permissions=True)
+        
+        print(f"✅ Template saved successfully: {template_doc.name}")
+        return {
+            "success": True,
+            "message": f"Template '{template_name}' saved successfully",
+            "template_name": template_doc.name
+        }
+        
+    except Exception as e:
+        print(f"❌ Error saving template: {str(e)}")
+        frappe.log_error(f"Error saving quotation template: {str(e)}")
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
+@frappe.whitelist()
+def get_quotation_templates(category="all", customer_type="all", search_term=None):
+    """
+    Get quotation templates for POS system
+    """
+    try:
+        frappe.logger().info(f"🔍 DEBUG: Getting quotation templates - category: {category}, customer_type: {customer_type}, search_term: {search_term}")
+        
+        filters = {}
+        
+        # Apply filters
+        if category and category != "all":
+            filters["category"] = category
+        
+        if customer_type and customer_type != "all":
+            filters["customer_type"] = customer_type
+        
+        if search_term:
+            filters["template_name"] = ["like", f"%{search_term}%"]
+        
+        frappe.logger().info(f"🔍 DEBUG: Applied filters: {filters}")
+        
+        # Get templates from Quotation Template doctype (if it exists) or use Quotation doctype
+        templates = []
+        
+        # First try to get from Quotation Template doctype
+        if frappe.db.exists("DocType", "Quotation Template"):
+            frappe.logger().info(f"🔍 DEBUG: Quotation Template doctype exists, querying...")
+            templates = frappe.get_all("Quotation Template",
+                filters=filters,
+                fields=["name", "template_name", "description", "category", "customer_type", "use_count"],
+                order_by="modified desc"
+            )
+            frappe.logger().info(f"✅ DEBUG: Found {len(templates)} templates in Quotation Template doctype")
+        else:
+            frappe.logger().info(f"🔍 DEBUG: Quotation Template doctype doesn't exist, checking Quotation doctype...")
+            # Fallback: get from Quotation doctype where status = "Template"
+            filters["status"] = "Template"
+            frappe.logger().info(f"🔍 DEBUG: Querying Quotation doctype with filters: {filters}")
+            templates = frappe.get_all("Quotation",
+                filters=filters,
+                fields=["name", "template_name", "description", "category", "customer_type", "use_count"],
+                order_by="modified desc"
+            )
+            frappe.logger().info(f"✅ DEBUG: Found {len(templates)} templates in Quotation doctype")
+        
+        # Debug: Check what templates were found
+        for i, template in enumerate(templates):
+            frappe.logger().info(f"🔍 DEBUG: Template {i+1}: {template.get('name', 'N/A')} - {template.get('template_name', 'N/A')}")
+        
+        # If no templates found, create a sample one for testing
+        if not templates:
+            frappe.logger().info(f"🔍 DEBUG: No templates found, creating sample template...")
+            # Create a sample template for testing
+            sample_template = create_sample_template()
+            if sample_template:
+                templates = [sample_template]
+                frappe.logger().info(f"✅ DEBUG: Sample template created: {sample_template.get('template_name', 'N/A')}")
+            else:
+                frappe.logger().error(f"❌ DEBUG: Failed to create sample template")
+        
+        frappe.logger().info(f"✅ DEBUG: Returning {len(templates)} templates")
+        
+        return {
+            "success": True,
+            "templates": templates,
+            "count": len(templates),
+            "debug_info": {
+                "filters_applied": filters,
+                "doctype_checked": "Quotation Template" if frappe.db.exists("DocType", "Quotation Template") else "Quotation",
+                "templates_found": len(templates)
+            }
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error getting quotation templates: {str(e)}")
+        frappe.logger().error(f"❌ DEBUG: Error getting templates: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Failed to load templates: {str(e)}",
+            "templates": [],
+            "count": 0,
+            "debug_info": {
+                "error": str(e),
+                "traceback": frappe.get_traceback()
+            }
+        }
+
+@frappe.whitelist()
+def load_quotation_template(template_name, price_list=None):
+    """
+    Load a quotation template and create a cart quotation from it
+    """
+    try:
+        frappe.logger().info(f"🔍 DEBUG: Starting template load for '{template_name}'")
+        frappe.logger().info(f"🔍 DEBUG: Current user: {frappe.session.user}")
+        frappe.logger().info(f"🔍 DEBUG: Price list: {price_list}")
+        
+        # Clear existing cart first
+        frappe.logger().info(f"🔍 DEBUG: Clearing existing cart...")
+        try:
+            cart.clear_cart()
+            frappe.logger().info(f"✅ DEBUG: Cart cleared successfully")
+        except Exception as clear_error:
+            frappe.logger().info(f"⚠️ DEBUG: Cart clear warning (may be expected): {str(clear_error)}")
+        
+        # Get template data
+        template = None
+        frappe.logger().info(f"🔍 DEBUG: Looking for template '{template_name}'...")
+        
+        # Try to get from Quotation Template doctype first
+        if frappe.db.exists("DocType", "Quotation Template"):
+            frappe.logger().info(f"🔍 DEBUG: Quotation Template doctype exists, trying to get template...")
+            if frappe.db.exists("Quotation Template", template_name):
+                template = frappe.get_doc("Quotation Template", template_name)
+                frappe.logger().info(f"✅ DEBUG: Found template in Quotation Template doctype")
+            else:
+                frappe.logger().info(f"❌ DEBUG: Template '{template_name}' not found in Quotation Template doctype")
+        else:
+            frappe.logger().info(f"🔍 DEBUG: Quotation Template doctype doesn't exist, checking Quotation doctype...")
+            # Fallback: get from Quotation doctype
+            if frappe.db.exists("Quotation", template_name):
+                template = frappe.get_doc("Quotation", template_name)
+                frappe.logger().info(f"✅ DEBUG: Found template in Quotation doctype")
+            else:
+                frappe.logger().info(f"❌ DEBUG: Template '{template_name}' not found in Quotation doctype")
+        
+        if not template:
+            frappe.logger().error(f"❌ DEBUG: Template '{template_name}' not found in any doctype")
+            return {
+                "success": False,
+                "message": f"Template '{template_name}' not found"
+            }
+        
+        frappe.logger().info(f"✅ DEBUG: Template found: {template.name}, status: {getattr(template, 'status', 'N/A')}")
+        
+        # Handle different template structures
+        template_items = []
+        if hasattr(template, 'items'):
+            template_items = template.items
+            frappe.logger().info(f"🔍 DEBUG: Template has {len(template_items)} items (standard items)")
+        elif hasattr(template, 'template_items'):
+            template_items = template.template_items
+            frappe.logger().info(f"🔍 DEBUG: Template has {len(template_items)} items (template_items)")
+        else:
+            frappe.logger().info(f"🔍 DEBUG: Template structure unknown - checking available attributes")
+            available_attrs = [attr for attr in dir(template) if not attr.startswith('_')]
+            frappe.logger().info(f"🔍 DEBUG: Available template attributes: {available_attrs}")
+            
+            # Try to find any item-like attributes
+            for attr in available_attrs:
+                try:
+                    attr_value = getattr(template, attr)
+                    if hasattr(attr_value, '__len__') and attr != 'name':
+                        frappe.logger().info(f"🔍 DEBUG: Attribute '{attr}' has length {len(attr_value)}")
+                except:
+                    pass
+        
+        frappe.logger().info(f"🔍 DEBUG: Template has {len(template_items)} items to process")
+        
+        # Check user permissions
+        frappe.logger().info(f"🔍 DEBUG: Checking user permissions for Quotation doctype...")
+        try:
+            can_read = frappe.has_permission("Quotation", "read")
+            can_write = frappe.has_permission("Quotation", "write")
+            can_create = frappe.has_permission("Quotation", "create")
+            frappe.logger().info(f"🔍 DEBUG: Permissions - Read: {can_read}, Write: {can_write}, Create: {can_create}")
+        except Exception as perm_error:
+            frappe.logger().error(f"❌ DEBUG: Permission check failed: {str(perm_error)}")
+        
+        # Get or create webshop cart quotation
+        frappe.logger().info(f"🔍 DEBUG: Getting webshop cart quotation...")
+        cart_response = cart.get_cart_quotation()
+        cart_quotation = cart_response.get("doc")
+        
+        if not cart_quotation:
+            frappe.logger().info(f"🔍 DEBUG: No existing cart found, creating new one...")
+            cart_quotation = frappe.new_doc("Quotation")
+            cart_quotation.quotation_to = "Customer"
+            cart_quotation.party_name = frappe.session.user
+            cart_quotation.selling_price_list = price_list or "Standard Selling"
+            cart_quotation.status = "Draft"
+        else:
+            frappe.logger().info(f"🔍 DEBUG: Using existing cart: {cart_quotation.name}")
+        
+        frappe.logger().info(f"🔍 DEBUG: Cart quotation created, copying {len(template_items)} items...")
+        
+        # Copy items from template
+        items_added = 0
+        for i, item in enumerate(template_items):
+            try:
+                frappe.logger().info(f"🔍 DEBUG: Adding item {i+1}: {item.item_code} (qty: {item.qty}, rate: {item.rate})")
+                cart_quotation.append("items", {
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "description": item.description,
+                    "qty": item.qty,
+                    "uom": item.uom,
+                    "rate": item.rate,
+                    "amount": item.amount
+                })
+                items_added += 1
+                frappe.logger().info(f"✅ DEBUG: Item {i+1} added successfully")
+            except Exception as item_error:
+                frappe.logger().error(f"❌ DEBUG: Failed to add item {i+1} ({item.item_code}): {str(item_error)}")
+        
+        frappe.logger().info(f"✅ DEBUG: {items_added} items copied to cart quotation")
+        
+        # Save the cart quotation
+        if cart_quotation.is_new():
+            frappe.logger().info(f"🔍 DEBUG: Inserting new cart quotation...")
+            try:
+                cart_quotation.insert(ignore_permissions=True)
+                frappe.logger().info(f"✅ DEBUG: Cart quotation inserted successfully: {cart_quotation.name}")
+            except Exception as insert_error:
+                frappe.logger().error(f"❌ DEBUG: Failed to insert cart quotation: {str(insert_error)}")
+                raise insert_error
+        else:
+            frappe.logger().info(f"🔍 DEBUG: Updating existing cart quotation...")
+        
+        frappe.logger().info(f"🔍 DEBUG: Saving cart quotation...")
+        try:
+            cart_quotation.save(ignore_permissions=True)
+            frappe.logger().info(f"✅ DEBUG: Cart quotation saved successfully")
+        except Exception as save_error:
+            frappe.logger().error(f"❌ DEBUG: Failed to save cart quotation: {str(save_error)}")
+            raise save_error
+        
+        # Update template use count
+        if hasattr(template, 'use_count'):
+            frappe.logger().info(f"🔍 DEBUG: Updating template use count...")
+            try:
+                template.use_count = (template.use_count or 0) + 1
+                template.save(ignore_permissions=True)
+                frappe.logger().info(f"✅ DEBUG: Template use count updated to {template.use_count}")
+            except Exception as use_count_error:
+                frappe.logger().error(f"⚠️ DEBUG: Failed to update use count (non-critical): {str(use_count_error)}")
+        
+        frappe.logger().info(f"✅ DEBUG: Template loading completed successfully")
+        
+        return {
+            "success": True,
+            "message": f"Template loaded successfully",
+            "items_count": items_added,
+            "quotation": cart_quotation.name,
+            "debug_info": {
+                "template_name": template_name,
+                "template_found": True,
+                "items_copied": items_added,
+                "quotation_created": cart_quotation.name,
+                "user": frappe.session.user
+            }
+        }
+        
+    except Exception as e:
+        error_type = type(e).__name__
+        error_message = str(e)
+        
+        frappe.logger().error(f"❌ DEBUG: Template loading failed - {error_type}: {error_message}")
+        frappe.log_error(f"Template loading failed: {error_type}: {error_message}")
+        
+        return {
+            "success": False,
+            "message": f"Failed to create cart quotation. Please check your user permissions and try again.",
+            "debug_info": {
+                "error_type": error_type,
+                "error_message": error_message,
+                "template_name": template_name,
+                "user": frappe.session.user
+            }
+        }
+
+@frappe.whitelist()
+def delete_quotation_template(template_name):
+    """
+    Delete a quotation template
+    """
+    try:
+        # Check if template exists
+        if frappe.db.exists("DocType", "Quotation Template"):
+            if not frappe.db.exists("Quotation Template", template_name):
+                return {
+                    "success": False,
+                    "message": "Template not found"
+                }
+            template = frappe.get_doc("Quotation Template", template_name)
+        else:
+            # Fallback: check Quotation doctype
+            if not frappe.db.exists("Quotation", template_name):
+                return {
+                    "success": False,
+                    "message": "Template not found"
+                }
+            template = frappe.get_doc("Quotation", template_name)
+        
+        # Delete template
+        template.delete(ignore_permissions=True)
+        
+        return {
+            "success": True,
+            "message": f"Template '{template_name}' deleted successfully"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error deleting template {template_name}: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Failed to delete template: {str(e)}"
+        }
+
+def create_sample_template():
+    """
+    Create a sample template for testing if no templates exist
+    """
+    try:
+        frappe.logger().info(f"🔍 DEBUG: Creating sample template...")
+        
+        # Create a sample template with basic fence items
+        sample_template = frappe.new_doc("Quotation")
+        sample_template.quotation_to = "Customer"
+        sample_template.party_name = "Template Customer"
+        sample_template.selling_price_list = "Standard Selling"
+        sample_template.status = "Template"
+        sample_template.template_name = "Test Template 1"
+        sample_template.description = "Sample fence template for testing"
+        sample_template.category = "Standard Fence"
+        sample_template.customer_type = "Both"
+        sample_template.use_count = 0
+        
+        frappe.logger().info(f"✅ DEBUG: Sample template document created")
+        
+        # Add sample items (you may need to adjust these item codes based on your actual items)
+        sample_items = [
+            {
+                "item_code": "VINYL-PANEL-6FT-WHITE",
+                "item_name": "6ft White Vinyl Privacy Panel",
+                "qty": 10,
+                "uom": "Unit",
+                "rate": 85.00
+            },
+            {
+                "item_code": "VINYL-POST-6FT-WHITE", 
+                "item_name": "6ft White Vinyl Fence Post",
+                "qty": 11,
+                "uom": "Unit",
+                "rate": 45.00
+            }
+        ]
+        
+        items_added = 0
+        for item_data in sample_items:
+            # Check if item exists before adding
+            frappe.logger().info(f"🔍 DEBUG: Checking if item exists: {item_data['item_code']}")
+            if frappe.db.exists("Item", item_data["item_code"]):
+                frappe.logger().info(f"✅ DEBUG: Item {item_data['item_code']} exists, adding to template")
+                sample_template.append("items", {
+                    "item_code": item_data["item_code"],
+                    "item_name": item_data["item_name"],
+                    "qty": item_data["qty"],
+                    "uom": item_data["uom"],
+                    "rate": item_data["rate"],
+                    "amount": item_data["qty"] * item_data["rate"]
+                })
+                items_added += 1
+            else:
+                frappe.logger().info(f"⚠️ DEBUG: Item {item_data['item_code']} doesn't exist, skipping")
+        
+        frappe.logger().info(f"✅ DEBUG: Added {items_added} items to sample template")
+        
+        frappe.logger().info(f"🔍 DEBUG: Inserting sample template...")
+        sample_template.insert(ignore_permissions=True)
+        frappe.logger().info(f"✅ DEBUG: Sample template inserted: {sample_template.name}")
+        
+        frappe.logger().info(f"🔍 DEBUG: Saving sample template...")
+        sample_template.save(ignore_permissions=True)
+        frappe.logger().info(f"✅ DEBUG: Sample template saved successfully")
+        
+        result = {
+            "name": sample_template.name,
+            "template_name": "Test Template 1",
+            "description": "Sample fence template for testing",
+            "category": "Standard Fence",
+            "customer_type": "Both",
+            "use_count": 0
+        }
+        
+        frappe.logger().info(f"✅ DEBUG: Sample template created successfully: {result}")
+        return result
+        
+    except Exception as e:
+        frappe.log_error(f"Error creating sample template: {str(e)}")
+        frappe.logger().error(f"❌ DEBUG: Failed to create sample template: {str(e)}")
+        frappe.logger().error(f"❌ DEBUG: Traceback: {frappe.get_traceback()}")
+        return None
+
+# Helper functions for quotation templates
+def get_current_cart_quotation():
+    """Get or create current cart quotation"""
+    try:
+        # Try to get existing cart quotation
+        existing_quotation = frappe.db.get_value(
+            "Quotation",
+            {
+                "contact_email": frappe.session.user,
+                "order_type": "Shopping Cart",
+                "docstatus": 0
+            },
+            "name",
+            order_by="modified desc"
+        )
+        
+        if existing_quotation:
+            return frappe.get_doc("Quotation", existing_quotation)
+        
+        # Create new cart quotation
+        party = get_party()
+        if not party:
+            print(f"❌ Error: Could not get party for user {frappe.session.user}")
+            return None
+            
+        company = frappe.db.get_single_value("Webshop Settings", "company")
+        if not company:
+            print(f"❌ Error: No company set in Webshop Settings")
+            return None
+        
+        quotation = frappe.get_doc({
+            "doctype": "Quotation",
+            "naming_series": "QTN-CART-",
+            "quotation_to": party.doctype,
+            "company": company,
+            "order_type": "Shopping Cart",
+            "status": "Draft",
+            "docstatus": 0,
+            "party_name": party.name,
+            "contact_email": frappe.session.user
+        })
+        
+        quotation.flags.ignore_permissions = True
+        quotation.insert()
+        
+        print(f"✅ Created new cart quotation: {quotation.name}")
+        return quotation
+        
+    except Exception as e:
+        print(f"❌ Error getting cart quotation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def clear_current_cart():
+    """Clear current cart items"""
+    try:
+        cart_quotation = get_current_cart_quotation()
+        if cart_quotation:
+            # Clear items and packed items
+            cart_quotation.items = []
+            cart_quotation.packed_items = []
+            cart_quotation.flags.ignore_permissions = True
+            cart_quotation.save()
+    except Exception as e:
+        print(f"❌ Error clearing cart: {str(e)}")
+
+def get_bundle_items_from_cart(item_code):
+    """Get bundle items from current cart for a specific item"""
+    try:
+        cart_quotation = get_current_cart_quotation()
+        if not cart_quotation:
+            return []
+        
+        # Find the item in cart
+        cart_item = None
+        for item in cart_quotation.items:
+            if item.item_code == item_code:
+                cart_item = item
+                break
+        
+        if not cart_item:
+            return []
+        
+        # Get packed items for this cart item
+        packed_items = []
+        for packed_item in cart_quotation.packed_items:
+            if packed_item.parent_detail_docname == cart_item.name:
+                packed_items.append(packed_item)
+        
+        return packed_items
+        
+    except Exception as e:
+        print(f"❌ Error getting bundle items: {str(e)}")
+        return []
+
+def get_item_price(item_code, price_list):
+    """Get current price for item from price list"""
+    try:
+        if not price_list:
+            return None
+        
+        price = frappe.db.get_value(
+            "Item Price",
+            {
+                "item_code": item_code,
+                "price_list": price_list
+            },
+            "price_list_rate"
+        )
+        
+        return price
+        
+    except Exception as e:
+        print(f"❌ Error getting item price: {str(e)}")
+        return None
+
+# =============================================================================
+# EXISTING FUNCTIONS
+# =============================================================================
+
+@frappe.whitelist()
+def get_bundles_by_material_type(material_type=None, price_list=None):
+    """
+    Get all bundles filtered by material type
+    Now uses the 'Product Bundle' item group for proper bundle detection
+    """
+    try:
+        print(f"🔍 Getting bundles for material type: {material_type}")
+        
+        # Primary method: Get items from 'Product Bundle' item group
+        bundles_query = """
+            SELECT 
+                item_code,
+                item_name,
+                item_group,
+                rate,
+                price_list_rate,
+                actual_qty,
+                description,
+                stock_uom,
+                has_variants,
+                variant_of
+            FROM `tabItem`
+            WHERE item_group = 'Product Bundle'
+            AND disabled = 0
+        """
+        
+        # Add material type filter if specified
+        if material_type and material_type != 'all':
+            # For Cap and Hardware items, also check custom_type_of_material field
+            # For other items, use name/description matching
+            bundles_query += f"""
+                AND (
+                    item_name LIKE '%{material_type}%' 
+                    OR description LIKE '%{material_type}%'
+                    OR (
+                        item_group IN ('Cap', 'Hardware') 
+                        AND item_code IN (
+                            SELECT parent 
+                            FROM `tabCustom Type Of Material` 
+                            WHERE material_type = '{material_type}'
+                        )
+                    )
+                )
+            """
+        
+        bundles = frappe.db.sql(bundles_query, as_dict=True)
+        
+        # Fallback method: Also check for items with packed_items (existing bundles in cart)
+        if not bundles:
+            print("📦 No bundles found in Product Bundle item group, checking for items with packed_items...")
+            packed_bundles_query = """
+                SELECT DISTINCT 
+                    qi.item_code,
+                    qi.item_name,
+                    qi.item_group,
+                    qi.rate,
+                    qi.price_list_rate,
+                    qi.actual_qty,
+                    qi.description
+                FROM `tabQuotation Item` qi
+                INNER JOIN `tabPacked Item` pi ON qi.name = pi.parent_detail_docname
+                WHERE qi.docstatus = 0
+            """
+            
+            if material_type and material_type != 'all':
+                packed_bundles_query += f" AND (qi.item_group LIKE '%{material_type}%' OR qi.item_name LIKE '%{material_type}%')"
+            
+            bundles = frappe.db.sql(packed_bundles_query, as_dict=True)
+        
+        # Apply price list pricing if specified
+        if price_list and bundles:
+            for bundle in bundles:
+                try:
+                    # Get price from price list
+                    price_list_rate = frappe.db.get_value(
+                        "Item Price",
+                        {"item_code": bundle.item_code, "price_list": price_list},
+                        "price_list_rate"
+                    )
+                    if price_list_rate:
+                        bundle.price_list_rate = price_list_rate
+                        bundle.rate = price_list_rate
+                except:
+                    pass
+        
+        print(f"📦 Found {len(bundles)} bundles from Product Bundle item group")
+        return {
+            "bundles": bundles,
+            "material_type": material_type,
+            "count": len(bundles)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error getting bundles: {str(e)}")
+        frappe.log_error(f"Error getting bundles by material type: {str(e)}")
+        return {
+            "bundles": [],
+            "material_type": material_type,
+            "count": 0,
+            "error": str(e)
+        }
+
 @frappe.whitelist()
 def get_product_bundle_items(bundle_name):
     """
@@ -1365,9 +2506,14 @@ def get_product_bundle_items(bundle_name):
         bundle_items = frappe.db.get_all(
             "Product Bundle Item",
             filters={"parent": bundle_name},
-            fields=["item_code", "item_name", "qty", "uom", "rate", "description"],
+            fields=["item_code", "qty", "uom", "rate", "description"],
             order_by="idx"
         )
+        
+        # Get item names for each bundle item
+        for bundle_item in bundle_items:
+            item_name = frappe.db.get_value("Item", bundle_item.item_code, "item_name")
+            bundle_item["item_name"] = item_name
         
         return bundle_items
         

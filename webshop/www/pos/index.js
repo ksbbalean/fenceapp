@@ -3325,7 +3325,7 @@ class FencePOS {
         this.updateCheckoutButton();
     }
     
-    selectFulfillment(method) {
+    async selectFulfillment(method) {
         this.fulfillmentMethod = method;
         
         document.querySelectorAll('#fulfillmentGroup .option-btn').forEach(btn => btn.classList.remove('selected'));
@@ -3333,6 +3333,22 @@ class FencePOS {
         const selectedBtn = document.querySelector(`[onclick*="selectFulfillment('${method}')"]`);
         if (selectedBtn) {
             selectedBtn.classList.add('selected');
+        }
+        
+        // Show/hide shipping options based on fulfillment method
+        const shippingGroup = document.getElementById('shippingGroup');
+        if (method === 'delivery') {
+            if (shippingGroup) {
+                shippingGroup.style.display = 'block';
+                // Load shipping options
+                await this.loadShippingOptions();
+            }
+        } else {
+            if (shippingGroup) {
+                shippingGroup.style.display = 'none';
+                // Clear shipping selection
+                this.selectedShippingOption = null;
+            }
         }
         
         const scheduleOptions = document.getElementById('scheduleOptions');
@@ -3704,7 +3720,8 @@ class FencePOS {
                     selectedHeight: this.selectedHeight,
                     selectedColor: this.selectedColor,
                     selectedRailType: this.selectedRailType,
-                    selectedCustomer: this.selectedCustomer
+                    selectedCustomer: this.selectedCustomer,
+                    selectedShipping: this.selectedShippingOption // Include shipping selection
                 };
                 
                 sessionStorage.setItem('fencePOSConfig', JSON.stringify(orderConfig));
@@ -4436,7 +4453,8 @@ class FencePOS {
         // Update cart pricing to match current price list (like webshop)
         if (this.currentPriceList) {
             await this.setCartPriceList(this.currentPriceList);
-            await this.updateCartPricing(this.currentPriceList);
+            // Note: setCartPriceList now handles price recalculation internally with proper pricing rule reset
+            // We don't need to call updateCartPricing to avoid double calculation and incremental increases
         }
         
         this.closeCustomerSearch();
@@ -5855,15 +5873,13 @@ class FencePOS {
                 priceListSelector.value = newPriceList;
             }
             
-            // Set cart price list first (this overrides customer default)
+            // Set cart price list first (this overrides customer default and recalculates prices)
             console.log(`🏷️ Setting cart price list to: ${newPriceList}`);
             const setPriceListResponse = await this.setCartPriceList(newPriceList);
             console.log('Cart price list set response:', setPriceListResponse);
             
-            // Update cart pricing if there are items in cart
-            console.log(`🏷️ Updating cart pricing to price list: ${newPriceList}`);
-            const updatePricingResponse = await this.updateCartPricing(newPriceList);
-            console.log('Cart pricing update response:', updatePricingResponse);
+            // Note: setCartPriceList now handles price recalculation internally with proper pricing rule reset
+            // We don't need to call updateCartPricing to avoid double calculation and incremental increases
             
             // Refresh cart display to show updated prices
             await this.updateCartDisplay();
@@ -5889,6 +5905,132 @@ class FencePOS {
             console.error('Error changing price list:', error);
             this.showNotification('Error updating price list', 'error');
         }
+    }
+    
+    async loadShippingOptions() {
+        /**
+         * Load available shipping options based on cart contents
+         */
+        try {
+            console.log('🚚 Loading shipping options...');
+            
+            // Get cart total to calculate material value
+            const cartResponse = await this.getCurrentCart();
+            if (!cartResponse || !cartResponse.message || !cartResponse.message.doc || !cartResponse.message.doc.items) {
+                this.showShippingMessage('Add items to cart to see shipping options');
+                return;
+            }
+            
+            const cartItems = cartResponse.message.doc.items;
+            if (!cartItems || cartItems.length === 0) {
+                this.showShippingMessage('Add items to cart to see shipping options');
+                return;
+            }
+            
+            // Calculate material value (sum of all items)
+            let materialValue = 0;
+            cartItems.forEach(item => {
+                materialValue += parseFloat(item.amount || 0);
+            });
+            
+            // For now, use a default distance (this would come from delivery address in full implementation)
+            const defaultDistance = 15; // miles
+            const defaultZipCode = '30309'; // This would come from delivery address form
+            
+            // Call shipping API to get available couriers
+            const response = await frappe.call({
+                method: 'fence_supply.api.shipping_api.get_available_couriers',
+                args: {
+                    material_value: materialValue,
+                    distance: defaultDistance,
+                    zip_code: defaultZipCode
+                }
+            });
+            
+            if (response.message && response.message.success) {
+                this.displayShippingOptions(response.message.courier_options, materialValue, defaultDistance);
+            } else {
+                this.showShippingMessage('No shipping options available');
+            }
+            
+        } catch (error) {
+            console.error('Error loading shipping options:', error);
+            this.showShippingMessage('Error loading shipping options');
+        }
+    }
+    
+    displayShippingOptions(courierOptions, materialValue, distance) {
+        /**
+         * Display shipping options in the POS interface
+         */
+        const container = document.getElementById('shippingOptionsContainer');
+        if (!container) return;
+        
+        if (!courierOptions || courierOptions.length === 0) {
+            container.innerHTML = '<div class="no-shipping">No shipping options available</div>';
+            return;
+        }
+        
+        let html = `
+            <div class="shipping-info">
+                <small>Material Value: $${materialValue.toFixed(2)} | Distance: ${distance} miles</small>
+            </div>
+        `;
+        
+        courierOptions.forEach((option, index) => {
+            const isSelected = this.selectedShippingOption && 
+                             this.selectedShippingOption.courier === option.courier && 
+                             this.selectedShippingOption.service_type === option.service_type;
+            
+            html += `
+                <div class="shipping-option ${isSelected ? 'selected' : ''}" 
+                     onclick="selectShippingOption('${option.courier}', '${option.service_type}', ${option.rate})">
+                    <div class="shipping-main">
+                        <span class="courier-name">${option.courier}</span>
+                        <span class="service-type">${option.service_type}</span>
+                        <span class="shipping-rate">$${option.rate.toFixed(2)}</span>
+                    </div>
+                    <div class="shipping-breakdown">
+                        Base: $${option.breakdown.base_rate.toFixed(2)} + 
+                        Distance: $${option.breakdown.distance_cost.toFixed(2)} + 
+                        Material: $${option.breakdown.material_cost.toFixed(2)}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+    
+    showShippingMessage(message) {
+        /**
+         * Show a message in the shipping options container
+         */
+        const container = document.getElementById('shippingOptionsContainer');
+        if (container) {
+            container.innerHTML = `<div class="shipping-message">${message}</div>`;
+        }
+    }
+    
+    selectShippingOption(courier, serviceType, rate) {
+        /**
+         * Select a shipping option
+         */
+        this.selectedShippingOption = {
+            courier: courier,
+            service_type: serviceType,
+            rate: rate
+        };
+        
+        // Update UI
+        document.querySelectorAll('.shipping-option').forEach(opt => opt.classList.remove('selected'));
+        if (event && event.target) {
+            event.target.closest('.shipping-option').classList.add('selected');
+        }
+        
+        console.log('🚚 Selected shipping option:', this.selectedShippingOption);
+        
+        this.updateCheckoutButton();
     }
 }
 
@@ -6001,8 +6143,11 @@ window.proceedToComponents = async () => {
 window.selectOrderType = (type) => {
     try { window.fencePOS?.selectOrderType(type); } catch(e) { console.error('selectOrderType error:', e); }
 };
-window.selectFulfillment = (method) => {
-    try { window.fencePOS?.selectFulfillment(method); } catch(e) { console.error('selectFulfillment error:', e); }
+window.selectFulfillment = async (method) => {
+    try { await window.fencePOS?.selectFulfillment(method); } catch(e) { console.error('selectFulfillment error:', e); }
+};
+window.selectShippingOption = (courier, serviceType, rate) => {
+    try { window.fencePOS?.selectShippingOption(courier, serviceType, rate); } catch(e) { console.error('selectShippingOption error:', e); }
 };
 window.selectSchedule = (type) => {
     try { window.fencePOS?.selectSchedule(type); } catch(e) { console.error('selectSchedule error:', e); }

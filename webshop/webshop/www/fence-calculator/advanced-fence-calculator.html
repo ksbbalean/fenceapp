@@ -1,0 +1,918 @@
+{% extends "templates/web.html" %}
+{% block title %}{{ _('Advanced Fence Calculator') }}{% endblock %}
+
+{% block head_include %}
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #f8f9fa;
+        color: #333;
+        overflow-x: hidden;
+    }
+
+    .fence-calculator-app {
+        display: grid;
+        grid-template-columns: 350px 1fr 350px;
+        grid-template-rows: 60px 1fr;
+        grid-template-areas: 
+            "header header header"
+            "sidebar-left main sidebar-right";
+        height: 100vh;
+        gap: 0;
+    }
+
+    .app-header {
+        grid-area: header;
+        background: linear-gradient(135deg, #2c3e50, #3498db);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
+
+    .app-header h1 {
+        font-size: 24px;
+        font-weight: 600;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+    }
+
+    .header-btn {
+        padding: 8px 16px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 6px;
+        background: rgba(255,255,255,0.1);
+        color: white;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.3s;
+    }
+
+    .header-btn:hover {
+        background: rgba(255,255,255,0.2);
+        border-color: rgba(255,255,255,0.5);
+        color: white;
+    }
+
+    .sidebar-left {
+        grid-area: sidebar-left;
+        background: white;
+        border-right: 1px solid #dee2e6;
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .main-drawing-area {
+        grid-area: main;
+        background: #fafafa;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .sidebar-right {
+        grid-area: sidebar-right;
+        background: white;
+        border-left: 1px solid #dee2e6;
+        overflow-y: auto;
+        padding: 20px;
+    }
+
+    .drawing-toolbar {
+        background: white;
+        border-bottom: 1px solid #dee2e6;
+        padding: 15px 20px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .tool-btn {
+        padding: 10px 15px;
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        background: white;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .tool-btn:hover {
+        border-color: #007bff;
+        background: #f8f9ff;
+    }
+
+    .tool-btn.active {
+        border-color: #007bff;
+        background: #007bff;
+        color: white;
+    }
+
+    .drawing-canvas-container {
+        flex: 1;
+        position: relative;
+        background: white;
+        margin: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    #fenceDrawingSVG {
+        width: 100%;
+        height: 100%;
+        cursor: crosshair;
+        background-color: #fafafa;
+        background-image: 
+            linear-gradient(#e0e0e0 1px, transparent 1px),
+            linear-gradient(90deg, #e0e0e0 1px, transparent 1px);
+        background-size: 20px 20px;
+    }
+
+    .sidebar-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+
+    .section-header {
+        background: #007bff;
+        color: white;
+        padding: 15px;
+        font-weight: 600;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .section-content {
+        padding: 20px;
+        background: white;
+    }
+
+    .fence-styles-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+
+    .fence-style-card {
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        padding: 12px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: white;
+    }
+
+    .fence-style-card:hover {
+        border-color: #007bff;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,123,255,0.2);
+    }
+
+    .fence-style-card.selected {
+        border-color: #007bff;
+        background: #f8f9ff;
+    }
+
+    .fence-style-icon {
+        font-size: 24px;
+        margin-bottom: 8px;
+    }
+
+    .fence-style-name {
+        font-weight: 500;
+        color: #495057;
+        font-size: 12px;
+    }
+
+    .fence-style-height {
+        font-size: 10px;
+        color: #6c757d;
+        margin-top: 4px;
+    }
+
+    .color-picker {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+
+    .color-option {
+        width: 35px;
+        height: 35px;
+        border-radius: 50%;
+        border: 3px solid #dee2e6;
+        cursor: pointer;
+        transition: all 0.3s;
+        position: relative;
+    }
+
+    .color-option:hover {
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .color-option.selected {
+        border-color: #007bff;
+        box-shadow: 0 0 0 3px rgba(0,123,255,0.3);
+    }
+
+    .color-option.selected::after {
+        content: '✓';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+        font-size: 14px;
+    }
+
+    .measurement-display {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+
+    .measurement-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .measurement-row:last-child {
+        border-bottom: none;
+    }
+
+    .measurement-label {
+        font-weight: 500;
+        color: #495057;
+        font-size: 14px;
+    }
+
+    .measurement-value {
+        color: #007bff;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .cost-summary {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        border-radius: 8px;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .cost-total {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .cost-breakdown {
+        font-size: 13px;
+        opacity: 0.9;
+    }
+
+    .action-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .action-btn {
+        padding: 12px 16px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.3s;
+        text-align: center;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .action-btn.primary {
+        background: #007bff;
+        color: white;
+    }
+
+    .action-btn.primary:hover {
+        background: #0056b3;
+        transform: translateY(-1px);
+    }
+
+    .action-btn.success {
+        background: #28a745;
+        color: white;
+    }
+
+    .action-btn.success:hover {
+        background: #218838;
+    }
+
+    .action-btn.secondary {
+        background: #6c757d;
+        color: white;
+    }
+
+    .action-btn.secondary:hover {
+        background: #545b62;
+    }
+
+    .zoom-controls {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        z-index: 100;
+    }
+
+    .zoom-btn {
+        width: 40px;
+        height: 40px;
+        border: none;
+        border-radius: 6px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 18px;
+        transition: all 0.3s;
+    }
+
+    .zoom-btn:hover {
+        background: #f8f9fa;
+        transform: scale(1.05);
+    }
+
+    .coordinates-display {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        z-index: 100;
+    }
+
+    .tooltip {
+        position: absolute;
+        background: rgba(0,0,0,0.9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 1000;
+        display: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255,255,255,0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        display: none;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #dee2e6;
+        border-top: 4px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Enhanced drawing features styles */
+    .precision-indicator {
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: #ff6b35;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 1001;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
+    }
+
+    .precision-panel {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        z-index: 1002;
+        min-width: 300px;
+    }
+
+    .precision-panel.hidden {
+        display: none;
+    }
+
+    .precision-panel h4 {
+        margin: 0 0 15px 0;
+        color: #2c3e50;
+        font-size: 16px;
+    }
+
+    .precision-panel .input-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .precision-panel label {
+        min-width: 60px;
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .precision-panel input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+
+    .precision-panel .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .precision-panel button {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .precision-panel button:first-child {
+        background: #007bff;
+        color: white;
+    }
+
+    .precision-panel button:first-child:hover {
+        background: #0056b3;
+    }
+
+    .precision-panel button:last-child {
+        background: #6c757d;
+        color: white;
+    }
+
+    .precision-panel button:last-child:hover {
+        background: #545b62;
+    }
+
+    /* Smart guides and snapping indicators */
+    .guide-line {
+        stroke: #ff6b35;
+        stroke-width: 1;
+        stroke-dasharray: 5,5;
+        opacity: 0.7;
+        pointer-events: none;
+    }
+
+    .snap-indicator {
+        fill: none;
+        stroke: #ff6b35;
+        stroke-width: 3;
+        opacity: 0.8;
+        pointer-events: none;
+        animation: snapPulse 0.3s ease-out;
+    }
+
+    @keyframes snapPulse {
+        0% { r: 4; opacity: 0; }
+        50% { r: 12; opacity: 1; }
+        100% { r: 8; opacity: 0.8; }
+    }
+
+    /* Ruler styles */
+    .ruler {
+        opacity: 0.8;
+        pointer-events: none;
+    }
+
+    .ruler line {
+        stroke: #666;
+        stroke-width: 1;
+    }
+
+    .ruler text {
+        fill: #666;
+        font-family: monospace;
+        font-size: 10px;
+        user-select: none;
+    }
+
+    /* Enhanced selection styles */
+    .fence-segment.selected {
+        filter: drop-shadow(0 0 8px #007bff);
+    }
+
+    .selection-box {
+        fill: rgba(0, 123, 255, 0.1);
+        stroke: #007bff;
+        stroke-width: 1;
+        stroke-dasharray: 3,3;
+        pointer-events: none;
+    }
+
+    /* Measurement displays */
+    .dimension-line {
+        stroke: #28a745;
+        stroke-width: 2;
+        marker-end: url(#arrowhead);
+        marker-start: url(#arrowhead);
+    }
+
+    .dimension-text {
+        fill: #28a745;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        font-weight: bold;
+        text-anchor: middle;
+        dominant-baseline: central;
+        background: white;
+        padding: 2px 4px;
+        border-radius: 2px;
+    }
+
+    /* Tool states */
+    .tool-btn.active {
+        background: #007bff;
+        color: white;
+        box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+    }
+
+    .tool-btn.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    /* Context menu */
+    .context-menu {
+        position: fixed;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        padding: 8px 0;
+        z-index: 1003;
+        min-width: 150px;
+        display: none;
+    }
+
+    .context-menu-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: background 0.2s;
+        font-size: 14px;
+    }
+
+    .context-menu-item:hover {
+        background: #f8f9fa;
+    }
+
+    .context-menu-item.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .context-menu-separator {
+        height: 1px;
+        background: #dee2e6;
+        margin: 4px 0;
+    }
+
+    /* Enhanced tooltips */
+    .enhanced-tooltip {
+        position: absolute;
+        background: rgba(0,0,0,0.9);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        pointer-events: none;
+        z-index: 1001;
+        max-width: 200px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .enhanced-tooltip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(0,0,0,0.9);
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 1024px) {
+        .fence-calculator-app {
+            grid-template-columns: 1fr;
+            grid-template-areas: 
+                "header"
+                "main"
+                "sidebar-left"
+                "sidebar-right";
+        }
+        
+        .sidebar-left, .sidebar-right {
+            max-height: 400px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .app-header {
+            padding: 0 15px;
+        }
+        
+        .app-header h1 {
+            font-size: 20px;
+        }
+        
+        .drawing-toolbar {
+            padding: 10px 15px;
+            flex-wrap: wrap;
+        }
+        
+        .fence-styles-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .color-picker {
+            grid-template-columns: repeat(6, 1fr);
+        }
+        
+        .drawing-canvas-container {
+            margin: 10px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="fence-calculator-app">
+    <!-- Header -->
+    <div class="app-header">
+        <h1>H&J Fence Supply - Professional Calculator</h1>
+        <div class="header-actions">
+            <a href="#" class="header-btn" id="saveProjectBtn">💾 Save Project</a>
+            <a href="#" class="header-btn" id="loadProjectBtn">📁 Load Project</a>
+            <a href="#" class="header-btn" id="userAccountBtn">👤 Account</a>
+        </div>
+    </div>
+
+    <!-- Left Sidebar - Tools & Styles -->
+    <div class="sidebar-left">
+        <div class="sidebar-section">
+            <div class="section-header">Drawing Tools</div>
+            <div class="section-content">
+                <div class="tool-btn active" data-tool="fence" id="fenceTool">
+                    📏 Draw Fence
+                </div>
+                <div class="tool-btn" data-tool="gate" id="gateTool">
+                    🚪 Add Gate
+                </div>
+                <div class="tool-btn" data-tool="measure" id="measureTool">
+                    📐 Measure
+                </div>
+                <div class="tool-btn" data-tool="select" id="selectTool">
+                    ☝️ Select
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-header">Fence Styles</div>
+            <div class="section-content">
+                <div class="fence-styles-grid" id="fenceStylesGrid">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-header">Colors</div>
+            <div class="section-content">
+                <div class="color-picker" id="colorPicker">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Drawing Area -->
+    <div class="main-drawing-area">
+        <div class="drawing-toolbar">
+            <div class="tool-btn" onclick="fenceDrawing.undo()" title="Undo (Ctrl+Z)">
+                ↶ Undo
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.redo()" title="Redo (Ctrl+Shift+Z)">
+                ↷ Redo
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.clearAll()" title="Clear All">
+                🗑️ Clear All
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.toggleGrid()" title="Toggle Grid (Ctrl+G)">
+                ⊞ Grid
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.toggleRulers()" title="Toggle Rulers (Ctrl+R)">
+                📏 Rulers
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.toggleSnap()" title="Toggle Snap">
+                🧲 Snap
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.toggleMagneticSnap()" title="Magnetic Snap">
+                🔗 Magnetic
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.showPrecisionInput()" title="Precision Input">
+                📐 Precision
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.autoOptimize()" title="Auto Optimize">
+                ⚡ Optimize
+            </div>
+            <div class="tool-btn" onclick="fenceDrawing.showMeasurements()" title="Show Measurements">
+                📏 Dimensions
+            </div>
+        </div>
+
+        <div class="drawing-canvas-container">
+            <svg id="fenceDrawingSVG" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
+                <!-- Grid pattern -->
+                <defs>
+                    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+                    </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+                
+                <!-- Drawing layers -->
+                <g id="backgroundLayer"></g>
+                <g id="fenceLayer"></g>
+                <g id="measurementLayer"></g>
+                <g id="overlayLayer"></g>
+            </svg>
+
+            <!-- Zoom Controls -->
+            <div class="zoom-controls">
+                <button class="zoom-btn" onclick="fenceDrawing.zoomIn()">+</button>
+                <button class="zoom-btn" onclick="fenceDrawing.zoomOut()">−</button>
+                <button class="zoom-btn" onclick="fenceDrawing.zoomFit()" title="Fit to View">⌂</button>
+            </div>
+
+            <!-- Coordinates Display -->
+            <div class="coordinates-display" id="coordinatesDisplay">
+                X: 0, Y: 0
+            </div>
+
+            <!-- Loading Overlay -->
+            <div class="loading-overlay" id="loadingOverlay">
+                <div class="loading-spinner"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar - Measurements & Costs -->
+    <div class="sidebar-right">
+        <div class="sidebar-section">
+            <div class="section-header">Measurements</div>
+            <div class="section-content">
+                <div class="measurement-display" id="measurementDisplay">
+                    <div class="measurement-row">
+                        <span class="measurement-label">Total Length:</span>
+                        <span class="measurement-value" id="totalLength">0 ft</span>
+                    </div>
+                    <div class="measurement-row">
+                        <span class="measurement-label">Sections:</span>
+                        <span class="measurement-value" id="sectionCount">0</span>
+                    </div>
+                    <div class="measurement-row">
+                        <span class="measurement-label">Gates:</span>
+                        <span class="measurement-value" id="gateCount">0</span>
+                    </div>
+                    <div class="measurement-row">
+                        <span class="measurement-label">Corners:</span>
+                        <span class="measurement-value" id="cornerCount">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-header">Material List</div>
+            <div class="section-content">
+                <div id="materialList">
+                    <!-- Populated by calculation engine -->
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-header">Cost Estimate</div>
+            <div class="section-content">
+                <div class="cost-summary">
+                    <div class="cost-total" id="costTotal">$0.00</div>
+                    <div class="cost-breakdown" id="costBreakdown">
+                        Add fence sections to see estimate
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="action-btn primary" onclick="fenceDrawing.generateQuote()">
+                        📋 Generate Quote
+                    </button>
+                    <button class="action-btn success" onclick="fenceDrawing.requestEstimate()">
+                        📧 Request Estimate
+                    </button>
+                    <button class="action-btn secondary" onclick="fenceDrawing.shareProject()">
+                        🔗 Share Project
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+{% endblock %}
+
+{% block script %}
+<script type="text/javascript" src="/fence-calculator/advanced-fence-drawing.js"></script>
+{% endblock %}

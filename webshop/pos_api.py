@@ -816,6 +816,12 @@ def update_cart_pricing(price_list):
         doc.selling_price_list = price_list
         print(f"🔄 POS API: Price list changed from {old_price_list} to {price_list}")
         
+        # Reset pricing rule effects to prevent incremental increases
+        doc.ignore_pricing_rule = 1  # Temporarily ignore pricing rules
+        doc.discount_amount = 0
+        doc.additional_discount_percentage = 0
+        doc.coupon_code = ""
+        
         print(f"🔄 POS API: Updating {len(doc.items)} items to price list {price_list}")
         
         # Recalculate prices and update quantities to trigger price refresh
@@ -825,12 +831,15 @@ def update_cart_pricing(price_list):
             if new_rate:
                 item.rate = new_rate
                 item.amount = new_rate * item.qty
+                # Reset any pricing rule effects on the item
+                item.discount_percentage = 0
+                item.discount_amount = 0
                 print(f"💰 POS API: {item.item_code}: {old_rate} → {new_rate}")
             else:
                 # If no price found, keep existing rate or set to 0
                 print(f"⚠️ POS API: No price found for {item.item_code} in {price_list}, keeping rate {old_rate}")
         
-        # Recalculate taxes and totals
+        # Recalculate taxes and totals only once
         doc.run_method("calculate_taxes_and_totals")
         
         # Force save with ignore_permissions to ensure price list change is saved
@@ -908,6 +917,12 @@ def set_cart_price_list(price_list):
         # Set the price list
         doc.selling_price_list = price_list
         
+        # Reset pricing rule effects to prevent incremental increases
+        doc.ignore_pricing_rule = 1  # Temporarily ignore pricing rules
+        doc.discount_amount = 0
+        doc.additional_discount_percentage = 0
+        doc.coupon_code = ""
+        
         # If there are items, recalculate their prices
         if doc.items:
             print(f"🔄 POS API: Recalculating prices for {len(doc.items)} items")
@@ -916,9 +931,12 @@ def set_cart_price_list(price_list):
                 if new_rate:
                     item.rate = new_rate
                     item.amount = new_rate * item.qty
+                    # Reset any pricing rule effects on the item
+                    item.discount_percentage = 0
+                    item.discount_amount = 0
                     print(f"💰 POS API: {item.item_code}: {item.rate}")
         
-        # Recalculate taxes and totals
+        # Recalculate taxes and totals only once
         if hasattr(doc, 'run_method'):
             doc.run_method("calculate_taxes_and_totals")
         
@@ -1080,7 +1098,7 @@ def create_pos_order(order_type="quote", delivery_method=None, scheduled_date=No
         
         # Convert to Sales Order if order type is "order"
         if order_type == "order":
-            sales_order = convert_quotation_to_sales_order(doc.name)
+            sales_order = convert_quotation_to_sales_order_enhanced(doc.name)
             return {
                 "message": "Order created successfully",
                 "quotation": doc.name,
@@ -1098,8 +1116,8 @@ def create_pos_order(order_type="quote", delivery_method=None, scheduled_date=No
         frappe.log_error(f"Error creating POS order: {str(e)}")
         return {"message": "Failed to create order"}
 
-def convert_quotation_to_sales_order(quotation_name):
-    """Convert quotation to sales order"""
+def convert_quotation_to_sales_order_enhanced(quotation_name, submit_order=True):
+    """Convert quotation to sales order with enhanced tax and shipping preservation"""
     try:
         quotation = frappe.get_doc("Quotation", quotation_name)
         
@@ -1112,8 +1130,11 @@ def convert_quotation_to_sales_order(quotation_name):
             "delivery_date": quotation.get("scheduled_date") or frappe.utils.add_days(frappe.utils.today(), 7),
             "selling_price_list": quotation.selling_price_list,
             "currency": quotation.currency,
+            "taxes_and_charges": quotation.taxes_and_charges,  # Copy tax template
             "items": []
         })
+        
+        frappe.log_error(f"DEBUG: Sales Order created with tax template: {sales_order.taxes_and_charges}", "Sales Order Tax Debug")
         
         # Copy items from quotation
         for item in quotation.items:
@@ -1127,6 +1148,26 @@ def convert_quotation_to_sales_order(quotation_name):
                 "amount": item.amount
             })
         
+        # Store quotation taxes for restoration after calculate_taxes_and_totals
+        frappe.log_error(f"Quotation {quotation_name} has {len(quotation.taxes) if hasattr(quotation, 'taxes') and quotation.taxes else 0} taxes", "SO Tax Debug")
+        frappe.log_error(f"Tax template: {getattr(quotation, 'taxes_and_charges', 'None')}", "SO Tax Debug")
+        
+        # Store quotation taxes for later restoration
+        quotation_taxes = []
+        if hasattr(quotation, 'taxes') and quotation.taxes:
+            for tax in quotation.taxes:
+                quotation_taxes.append({
+                    "charge_type": tax.charge_type,
+                    "account_head": tax.account_head,
+                    "description": tax.description,
+                    "rate": getattr(tax, 'rate', None),
+                    "tax_amount": getattr(tax, 'tax_amount', None),
+                    "total": getattr(tax, 'total', None),
+                    "cost_center": getattr(tax, 'cost_center', None),
+                    "included_in_print_rate": getattr(tax, 'included_in_print_rate', 0),
+                    "included_in_paid_amount": getattr(tax, 'included_in_paid_amount', 0)
+                })
+        
         # Copy POS-specific fields
         if hasattr(quotation, 'delivery_method'):
             sales_order.delivery_method = quotation.delivery_method
@@ -1135,12 +1176,53 @@ def convert_quotation_to_sales_order(quotation_name):
         if hasattr(quotation, 'scheduled_time'):
             sales_order.scheduled_time = quotation.scheduled_time
         
-        sales_order.insert()
-        sales_order.submit()
+        # DON'T call calculate_taxes_and_totals first - it clears manually copied taxes
+        # Instead, directly restore quotation taxes and then calculate once
         
-        # Update quotation status
-        quotation.status = "Ordered"
-        quotation.save()
+        frappe.log_error(f"SO before tax restore: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        
+        # Restore quotation taxes (including shipping) directly
+        if quotation_taxes:
+            frappe.log_error(f"Restoring {len(quotation_taxes)} taxes to SO", "SO Tax Debug")
+            
+            # Clear and restore all taxes from quotation
+            sales_order.set("taxes", [])
+            for tax_data in quotation_taxes:
+                # Only add fields that have values
+                clean_tax = {"charge_type": tax_data["charge_type"], "account_head": tax_data["account_head"], "description": tax_data["description"]}
+                if tax_data.get("rate"):
+                    clean_tax["rate"] = tax_data["rate"]
+                if tax_data.get("tax_amount"):
+                    clean_tax["tax_amount"] = tax_data["tax_amount"]
+                if tax_data.get("total"):
+                    clean_tax["total"] = tax_data["total"]
+                if tax_data.get("cost_center"):
+                    clean_tax["cost_center"] = tax_data["cost_center"]
+                if tax_data.get("included_in_print_rate") is not None:
+                    clean_tax["included_in_print_rate"] = tax_data["included_in_print_rate"]
+                if tax_data.get("included_in_paid_amount") is not None:
+                    clean_tax["included_in_paid_amount"] = tax_data["included_in_paid_amount"]
+                    
+                sales_order.append("taxes", clean_tax)
+            
+            frappe.log_error(f"SO after tax restore: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+            
+            # Single final calculation to update totals
+            sales_order.run_method("calculate_taxes_and_totals")
+            frappe.log_error(f"SO after final calc: {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        else:
+            # No quotation taxes, use standard calculation
+            sales_order.run_method("calculate_taxes_and_totals")
+        
+        sales_order.insert()
+        frappe.log_error(f"SO {sales_order.name} created with {len(sales_order.taxes)} taxes", "SO Tax Debug")
+        
+        if submit_order:
+            sales_order.submit()
+            
+            # Update quotation status
+            quotation.status = "Ordered"
+            quotation.save()
         
         return sales_order
         
@@ -1675,9 +1757,14 @@ def check_product_bundle(item_code):
             bundle_items = frappe.db.get_all(
                 "Product Bundle Item",
                 filters={"parent": bundle.name},
-                fields=["item_code", "item_name", "qty", "uom", "rate", "description"],
+                fields=["item_code", "qty", "uom", "rate", "description"],
                 order_by="idx"
             )
+            
+            # Get item names for each bundle item
+            for bundle_item in bundle_items:
+                item_name = frappe.db.get_value("Item", bundle_item.item_code, "item_name")
+                bundle_item["item_name"] = item_name
             
             return {
                 "is_bundle": True,
@@ -2419,9 +2506,14 @@ def get_product_bundle_items(bundle_name):
         bundle_items = frappe.db.get_all(
             "Product Bundle Item",
             filters={"parent": bundle_name},
-            fields=["item_code", "item_name", "qty", "uom", "rate", "description"],
+            fields=["item_code", "qty", "uom", "rate", "description"],
             order_by="idx"
         )
+        
+        # Get item names for each bundle item
+        for bundle_item in bundle_items:
+            item_name = frappe.db.get_value("Item", bundle_item.item_code, "item_name")
+            bundle_item["item_name"] = item_name
         
         return bundle_items
         
